@@ -29,11 +29,16 @@ import { updateLetterWidgetSafe } from '../widgets/update-letter-widget';
  * - **⑤ 순서 지정** — 행별 ▲/▼로 노출 순서 재정렬(배열 이웃 교환 — 순수 JS, 재크롭 없음).
  *   확정 시 배열 순서가 그대로 letter.segment_order가 된다(persistSegmentationResult가
  *   받은 순서대로 기록 — 항목 11 계약의 실사용: LineSegmentsView가 이 순서로 그린다).
+ * - **② 나누기** — 하나로 붙어 검출된 조각을 위/아래 둘로 분리: 조각 이미지를 탭해
+ *   가로 분할선 위치를 정하고(드래그·슬라이더 아님 — RN 코어에 Slider가 없어 새 의존성이
+ *   필요했다, DECISIONS_NEEDED 18) "여기서 나누기"로 확정하면 cleanedFull에서 두 사각형을
+ *   재크롭한다(합치기와 같은 expo-image-manipulator 경로). 위 조각은 원래 번호를 물려받고
+ *   아래 조각은 새 번호(최대값+1)를 받는다 — 확정 파일명(line-<idx>.jpg)·행 key의 유일성.
  * 완료 조건은 2.6 그대로 — 유효 조각 1개 이상 또는 통짜 저장(전부 빼면 통짜만 가능).
  * 확정 시 확정 조각이 위젯 풀에 편입되고 위젯이 즉시 갱신된다(TSD.md 5.1·5.2 —
  * 기획서 결정 4 '볼 때마다 랜덤'의 풀이 통째 썸네일에서 확정 조각으로 바뀐다).
  *
- * 다음 걸음 (TODO — TSD.md 4.5 보정 액션): 나누기/박스 조절,
+ * 다음 걸음 (TODO — TSD.md 4.5 보정 액션): 박스 조절(5종 중 마지막),
  * 그리고 목록 대신 이진화 이미지 위 번호 박스 오버레이 표시. 지금은 목록 형태다.
  *
  * 실행 환경: segmentLetterImage는 개발 빌드 전용(OpenCV 네이티브 모듈) —
@@ -61,14 +66,17 @@ type Phase =
   //   남는 조각의 index는 재번호하지 않는다: idx는 순서 용도뿐이라 갭이 무해하고,
   //   bbox·파일명 대응이 그대로 유지된다 (DECISIONS_NEEDED 12). 합친 조각은 위쪽
   //   조각의 index를 물려받는다 — 같은 이유.
-  // busy: 합치기 재크롭 진행 중 — 그동안 모든 조작 버튼을 잠근다(경쟁 상태 방지).
+  // busy: 합치기·나누기 재크롭 진행 중 — 그동안 모든 조작 버튼을 잠근다(경쟁 상태 방지).
+  // split: 나누기 진행 중인 조각 — index와 분할선 위치(조각 높이 대비 0~1 비율).
+  //   null이면 후보 목록, 아니면 분할선 지정 화면을 그린다(취소하면 null 복귀).
   | {
       name: 'review';
       result: SegmentationResult;
       candidates: SegmentCandidate[];
       excluded: ReadonlySet<number>;
       busy: boolean;
-      mergeError: string | null;
+      actionError: string | null;
+      split: { index: number; fraction: number } | null;
     }
   | { name: 'saving' }
   | { name: 'done'; segmentCount: number }
@@ -118,6 +126,61 @@ async function mergeCandidates(
   };
 }
 
+/**
+ * 나누기(TSD.md 4.5 ② — 하나로 붙어 검출된 조각을 위/아래 둘로 분리): 조각 bbox를
+ * 분할선 비율(fraction — 조각 높이 대비 0~1)에서 수평으로 잘라 두 사각형을
+ * cleanedFull에서 재크롭한다. 합치기와 같은 expo-image-manipulator 경로 —
+ * OpenCV 재로드 없음, 캐시에 저장(확정 시 문서 폴더로 이동).
+ *
+ * 번호(index): 위 조각은 원래 번호를 물려받고 아래 조각은 bottomIndex(호출자가
+ * 현재 후보 최대값+1로 계산)를 받는다 — 확정 파일명 `line-<idx>.jpg`(segmentation-store)와
+ * 후보 행 key·excluded 집합이 index 유일성을 요구해서다(DECISIONS_NEEDED 18).
+ */
+async function splitCandidate(
+  result: SegmentationResult,
+  target: SegmentCandidate,
+  fraction: number,
+  bottomIndex: number
+): Promise<[SegmentCandidate, SegmentCandidate]> {
+  const { imageWidth, imageHeight } = result;
+  const b = target.boundingBox;
+  // 정규화 → 픽셀: 합치기와 같은 규칙(바깥쪽 내림/올림 후 이미지 경계 클램프).
+  const px = Math.max(0, Math.floor(b.x * imageWidth));
+  const py = Math.max(0, Math.floor(b.y * imageHeight));
+  const pw = Math.max(1, Math.min(imageWidth - px, Math.ceil((b.x + b.w) * imageWidth) - px));
+  const ph = Math.min(imageHeight - py, Math.ceil((b.y + b.h) * imageHeight) - py);
+  if (ph < 2) throw new Error('조각이 너무 얇아서 나눌 수 없어요.');
+  // 분할선 픽셀 위치 — 위/아래 모두 최소 1px 보장(빈 크롭 방지).
+  const topH = Math.min(ph - 1, Math.max(1, Math.round(ph * fraction)));
+  const halves: { y: number; h: number; uri: string }[] = [];
+  for (const rect of [
+    { y: py, h: topH },
+    { y: py + topH, h: ph - topH },
+  ]) {
+    const cropped = await ImageManipulator.manipulate(result.cleanedFullUri)
+      .crop({ originX: px, originY: rect.y, width: pw, height: rect.h })
+      .renderAsync();
+    const saved = await cropped.saveAsync({
+      format: SaveFormat.JPEG,
+      compress: OUTPUT_JPEG_QUALITY,
+    });
+    halves.push({ ...rect, uri: saved.uri });
+  }
+  const toCandidate = (half: (typeof halves)[number], index: number): SegmentCandidate => ({
+    index,
+    granularity: target.granularity,
+    cropUri: half.uri,
+    boundingBox: {
+      x: px / imageWidth,
+      y: half.y / imageHeight,
+      w: pw / imageWidth,
+      h: half.h / imageHeight,
+    },
+    aspectRatio: pw / half.h,
+  });
+  return [toCandidate(halves[0], target.index), toCandidate(halves[1], bottomIndex)];
+}
+
 // processing_status(DECISIONS_NEEDED 9 매핑)별 시작 안내 — 재실행은 통째 교체임을 알린다
 function idleStatusText(processingStatus: string): string {
   switch (processingStatus) {
@@ -138,6 +201,9 @@ export default function SegmentationReviewPanel({
 }: Props) {
   const db = useSQLiteContext();
   const [phase, setPhase] = useState<Phase>({ name: 'idle' });
+  // 분할선 지정 화면의 이미지 표시 높이(px) — 탭 위치(locationY)를 0~1 비율로 바꾸는 분모.
+  // onLayout으로 갱신되므로 phase 밖 로컬 상태로 충분하다(분할선 화면에서만 읽는다).
+  const [splitViewHeight, setSplitViewHeight] = useState(0);
 
   const runSegmentation = async () => {
     setPhase({ name: 'running' });
@@ -149,7 +215,8 @@ export default function SegmentationReviewPanel({
         candidates: result.segments,
         excluded: new Set(),
         busy: false,
-        mergeError: null,
+        actionError: null,
+        split: null,
       });
     } catch (e) {
       // Expo Go면 여기로 온다 — segmentLetterImage의 안내 메시지를 그대로 보여준다
@@ -182,19 +249,56 @@ export default function SegmentationReviewPanel({
       }
     }
     if (abovePos < 0) return; // 위에 안 뺀 조각이 없다 — 버튼도 안 그려진다(방어)
-    setPhase({ ...phase, busy: true, mergeError: null });
+    setPhase({ ...phase, busy: true, actionError: null });
     try {
       const merged = await mergeCandidates(result, candidates[abovePos], candidates[pos]);
       const next = candidates.slice();
       next[abovePos] = merged;
       next.splice(pos, 1);
-      setPhase({ ...phase, candidates: next, busy: false, mergeError: null });
+      setPhase({ ...phase, candidates: next, busy: false, actionError: null });
     } catch (e) {
       // 실패해도 후보 목록은 그대로 — 검토 작업을 잃지 않는다(에러 화면으로 안 보냄)
       setPhase({
         ...phase,
         busy: false,
-        mergeError: e instanceof Error ? e.message : String(e),
+        actionError: e instanceof Error ? e.message : String(e),
+      });
+    }
+  };
+
+  // "나누기" — 나누기 액션(TSD.md 4.5 ②)의 진입: 분할선 지정 화면으로 전환.
+  // 시작 위치는 조각 높이의 가운데(0.5) — 이미지를 탭해 옮긴다(splitViewTap).
+  const beginSplit = (index: number) => {
+    if (phase.name !== 'review' || phase.busy) return;
+    setPhase({ ...phase, split: { index, fraction: 0.5 }, actionError: null });
+  };
+
+  const cancelSplit = () => {
+    if (phase.name !== 'review' || phase.busy) return;
+    setPhase({ ...phase, split: null });
+  };
+
+  // 분할선 확정 — 두 조각으로 재크롭해 원래 자리에 넣는다(위 조각이 원래 index,
+  // 아래 조각은 현재 후보 최대값+1 — index 유일성은 splitCandidate 주석 참조).
+  const confirmSplit = async () => {
+    if (phase.name !== 'review' || phase.busy || phase.split == null) return;
+    const { result, candidates, split } = phase;
+    const pos = candidates.findIndex((c) => c.index === split.index);
+    if (pos < 0) return; // 방어 — 분할선 화면의 조각이 사라졌으면 아무것도 안 한다
+    setPhase({ ...phase, busy: true, actionError: null });
+    try {
+      const bottomIndex = Math.max(...candidates.map((c) => c.index)) + 1;
+      const [top, bottom] = await splitCandidate(result, candidates[pos], split.fraction, bottomIndex);
+      const next = candidates.slice();
+      next.splice(pos, 1, top, bottom); // 원래 자리에 위→아래 순서로 — 표시 순서 유지
+      setPhase({ ...phase, candidates: next, busy: false, actionError: null, split: null });
+    } catch (e) {
+      // 실패해도 후보 목록으로 돌아간다 — 검토 작업을 잃지 않는다(합치기와 같은 태도)
+      setPhase({
+        ...phase,
+        busy: false,
+        actionError: e instanceof Error ? e.message : String(e),
+        split: null,
       });
     }
   };
@@ -213,7 +317,7 @@ export default function SegmentationReviewPanel({
     setPhase({ ...phase, candidates: next });
   };
 
-  // 합치기 실수 복구 — 병합별 되돌리기 스택 대신 자동 검출 직후로 통째 복귀
+  // 합치기·나누기 실수 복구 — 액션별 되돌리기 스택 대신 자동 검출 직후로 통째 복귀
   // (빼기도 함께 초기화 — "자동 검출로 되돌리기"라는 이름 그대로. DECISIONS_NEEDED 15).
   const resetToAutoDetected = () => {
     if (phase.name !== 'review' || phase.busy) return;
@@ -223,7 +327,8 @@ export default function SegmentationReviewPanel({
       candidates: phase.result.segments,
       excluded: new Set(),
       busy: false,
-      mergeError: null,
+      actionError: null,
+      split: null,
     });
   };
 
@@ -298,9 +403,55 @@ export default function SegmentationReviewPanel({
   }
 
   if (phase.name === 'review') {
-    const { result, candidates, excluded, busy, mergeError } = phase;
+    const { result, candidates, excluded, busy, actionError, split } = phase;
+
+    // 나누기 액션(TSD.md 4.5 ②)의 분할선 지정 화면 — 이미지를 탭해 가로 분할선을
+    // 옮기고 "여기서 나누기"로 확정한다. 드래그·슬라이더가 아닌 탭인 이유는
+    // DECISIONS_NEEDED 18(새 의존성 0 — RN 코어에 Slider 없음).
+    const splitTarget = split != null ? candidates.find((c) => c.index === split.index) : undefined;
+    if (split != null && splitTarget != null) {
+      return (
+        <View style={styles.panel}>
+          <Text style={styles.reviewHeader}>
+            {splitTarget.index + 1}번 조각 — 나눌 자리를 탭해 주세요.
+          </Text>
+          <ScrollView style={styles.candidateList} contentContainerStyle={styles.candidateListContent}>
+            <Pressable
+              disabled={busy}
+              onLayout={(e) => setSplitViewHeight(e.nativeEvent.layout.height)}
+              onPress={(e) => {
+                if (splitViewHeight <= 0) return;
+                // 탭 위치 → 조각 높이 대비 비율. 가장자리 5%는 남긴다 — 실수로 머리카락
+                // 같은 조각이 생기는 것을 막고 분할선이 화면에서 안 보이는 일이 없게.
+                const fraction = Math.min(
+                  0.95,
+                  Math.max(0.05, e.nativeEvent.locationY / splitViewHeight)
+                );
+                setPhase({ ...phase, split: { ...split, fraction } });
+              }}
+            >
+              <Image
+                source={{ uri: splitTarget.cropUri }}
+                style={[styles.splitImage, { aspectRatio: splitTarget.aspectRatio }]}
+                resizeMode="contain"
+              />
+              {/* 가로 분할선 — 선의 위/아래가 서로 다른 조각이 된다 */}
+              <View pointerEvents="none" style={[styles.splitLine, { top: `${split.fraction * 100}%` }]} />
+            </Pressable>
+            <Text style={styles.subText}>선의 위와 아래가 서로 다른 조각이 돼요.</Text>
+          </ScrollView>
+          <Pressable style={styles.primaryButton} disabled={busy} onPress={confirmSplit}>
+            <Text style={styles.primaryButtonText}>{busy ? '나누는 중…' : '여기서 나누기'}</Text>
+          </Pressable>
+          <Pressable style={styles.secondaryButton} disabled={busy} onPress={cancelSplit}>
+            <Text style={styles.secondaryButtonText}>나누지 않고 돌아가기</Text>
+          </Pressable>
+        </View>
+      );
+    }
+
     const kept = candidates.filter((seg) => !excluded.has(seg.index));
-    const edited = candidates !== result.segments; // 합치기·순서 지정이 한 번이라도 일어났는가
+    const edited = candidates !== result.segments; // 합치기·나누기·순서 지정이 일어났는가
     return (
       <View style={styles.panel}>
         <ScrollView style={styles.candidateList} contentContainerStyle={styles.candidateListContent}>
@@ -312,8 +463,8 @@ export default function SegmentationReviewPanel({
           {candidates.length === 0 && (
             <Text style={styles.subText}>이 편지는 통째로 저장하고 한 장으로 만나는 게 좋겠어요.</Text>
           )}
-          {mergeError != null && (
-            <Text style={styles.subText}>합치지 못했어요 — {mergeError}</Text>
+          {actionError != null && (
+            <Text style={styles.subText}>조각을 고치지 못했어요 — {actionError}</Text>
           )}
           {edited && (
             <Pressable disabled={busy} onPress={resetToAutoDetected}>
@@ -361,6 +512,16 @@ export default function SegmentationReviewPanel({
                       onPress={() => mergeWithAbove(seg.index)}
                     >
                       <Text style={styles.rowButtonText}>위와 합치기</Text>
+                    </Pressable>
+                  )}
+                  {/* 나누기 액션(TSD.md 4.5 ②) — 하나로 붙은 줄을 위/아래로 분리 */}
+                  {!isExcluded && (
+                    <Pressable
+                      style={styles.rowButtonSecond}
+                      disabled={busy}
+                      onPress={() => beginSplit(seg.index)}
+                    >
+                      <Text style={styles.rowButtonText}>나누기</Text>
                     </Pressable>
                   )}
                   {/* 순서 지정 액션(TSD.md 4.5 ⑤) — 노출 순서 재정렬(이웃 교환) */}
@@ -507,6 +668,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   moveButtonDisabled: { opacity: 0.35 },
+  splitImage: { width: '100%', backgroundColor: '#fff', borderRadius: 10 },
+  splitLine: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    height: 2,
+    marginTop: -1,
+    backgroundColor: '#2e8b6f',
+  },
   resetLinkText: {
     fontSize: 12,
     fontWeight: '600',
