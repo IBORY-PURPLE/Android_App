@@ -2,7 +2,35 @@
 
 > 매 반복 시작 시 이 파일부터 읽는다. 규칙·범위는 overnight_task.md, 제품 결정은 ..\기획서.md, 실행 계획은 ..\개발계획.md.
 
-**반복 횟수(검증 통과 커밋 기준): 4**
+**반복 횟수(검증 통과 커밋 기준): 5**
+
+---
+
+## 이터레이션 5 — 편지 저장 (메타 입력 + 이미지 사본 + INSERT) (2026-07-18)
+
+**한 일**
+- `npx expo install expo-file-system expo-crypto` (~57.0.1 둘 다, Expo Go 내장. app.json 변경 없음).
+- 코드 작성 전 SDK 57 문서 확인:
+  - expo-file-system(https://docs.expo.dev/versions/v57.0.0/sdk/filesystem/): 새 클래스 API — `Paths.document`(문서 디렉터리), `Directory.create({ intermediates, idempotent })`, `File.copy(destination)` → `Promise<void>`, `File.uri`/`File.size` 속성. 레거시 `copyAsync`/`documentDirectory`는 쓰지 않음.
+  - expo-crypto: `Crypto.randomUUID(): string` (동기, UUIDv4 — TSD.md 스키마의 TEXT id용).
+  - expo-sqlite: `runAsync(source, params)` / `withTransactionAsync(task)` 시그니처 확인.
+- `AddLetterScreen.tsx`: 사진 선택 후 애칭·받은 날짜(YYYY-MM-DD, 오늘 자동 채움) 입력 폼 + "편지 보관하기" 버튼. 저장 시:
+  1. 결정 8 '디지털은 사본' — 이미지를 앱 문서 폴더 `letters/<assetId>.<ext>`로 복사(갤러리 원본 불변).
+  2. 트랜잭션으로 asset(kind='originalScan', local_path, byte_size) + letter(id, 애칭, received_date, scanned_at, original_asset_id, processing_status='raw') INSERT — TSD.md 6.3 enum 값 그대로.
+  3. 편지함 복귀 → 목록 화면 재마운트로 자동 갱신(추가 코드 없음).
+- 입력 검증은 최소한(애칭 공백/날짜 형식·유효성)만. App.tsx BUILD #6.
+
+**검증 결과 (게이트 3종)**
+- `npx tsc --noEmit` — 통과 (에러 0)
+- `npx expo-doctor` — 통과 (20/20 checks)
+- `npx expo export -p android` — 통과 (번들 무에러, 643 modules)
+
+**커밋:** `080c85c` feat: 편지 메타 입력 폼 + 이미지 사본 저장 + letter/asset INSERT
+
+**다음 후보 (작은 순)**
+1. 편지 상세 화면 — 편지함 행 탭 → 저장된 원본 이미지(asset.local_path) 표시 + 뒤로. (보기모드 3종 뼈대의 전 단계)
+2. 보기모드 3종 뼈대 (통짜/줄만/영역 — 통짜만 실동작, 줄만/영역은 자리 + TODO. 실제 분할은 2단계)
+3. (뼈대만) OpenCV 세그멘테이션 인터페이스 + TODO / Glance 위젯 자리 표시
 
 ---
 
