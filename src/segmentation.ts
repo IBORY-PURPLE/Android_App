@@ -68,6 +68,10 @@ export type SegmentCandidate = {
 export type SegmentationResult = {
   cleanedFullUri: string; // 이진화 전체 이미지 → asset(kind='cleanedFull'), '통째로' 보기의 실체
   segments: SegmentCandidate[];
+  // 원본(=cleanedFull) 픽셀 크기 — 정규화 bbox를 픽셀 사각형으로 되돌릴 때 쓴다.
+  // 보정 액션(TSD.md 4.5)의 재크롭(합치기 등)이 소비자. DB에는 저장하지 않는다(메모리 전용).
+  imageWidth: number;
+  imageHeight: number;
 };
 
 // ── 파이프라인 파라미터 — ★전부 임시 초기값 (0단계 확정 전, TSD.md 4.3) ──────────
@@ -80,7 +84,10 @@ const DILATE_KERNEL_HEIGHT = 3;
 const DILATE_ITERATIONS = 1;
 const MIN_LINE_HEIGHT_RATIO = 0.01; // 이미지 높이 대비 이보다 낮은 상자는 노이즈로 버림
 const MIN_LINE_WIDTH_RATIO = 0.05; // 이미지 너비 대비 이보다 좁은 상자는 노이즈로 버림
-const OUTPUT_JPEG_QUALITY = 0.9; // 산출물 JPEG 품질 (saveMatToFile compression: 0~1, 1=고품질)
+// 산출물 JPEG 품질 (saveMatToFile compression: 0~1, 1=고품질).
+// export 이유: 보정 액션의 재크롭(SegmentationReviewPanel 합치기)이 같은 품질로 저장해
+// 자동 검출 조각과 병합 조각의 화질이 갈라지지 않게 한다.
+export const OUTPUT_JPEG_QUALITY = 0.9;
 
 const SEGMENTATION_OUT_DIR_NAME = 'segmentation';
 
@@ -240,7 +247,7 @@ export async function segmentLetterImage(originalImageUri: string): Promise<Segm
     });
 
     // 6(문장 승격)·7(위젯 썸네일 다운스케일)은 파일 머리 주석의 TODO 참조.
-    return { cleanedFullUri: cleanedFullFile.uri, segments };
+    return { cleanedFullUri: cleanedFullFile.uri, segments, imageWidth, imageHeight };
   } finally {
     // TSD.md 4.4 — Mat 등 네이티브 버퍼는 자동 해제되지 않는다. 성공·실패 모두 정리.
     OpenCV.clearBuffers();

@@ -1,8 +1,10 @@
+import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useState } from 'react';
 import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import {
+  OUTPUT_JPEG_QUALITY,
   segmentLetterImage,
   type SegmentCandidate,
   type SegmentationResult,
@@ -16,14 +18,19 @@ import { updateLetterWidgetSafe } from '../widgets/update-letter-widget';
  *
  * 이번 걸음까지의 범위: 자동 검출(segmentLetterImage) 결과를 줄 조각 후보 목록으로
  * 보여주고, 확정(persistSegmentationResult)하거나 ★통짜 후퇴("이 편지는 통째로만
- * 저장" — 기획서 2.6 탈출구, 상시 개방·원탭)로 빠져나간다. 보정 액션 중
- * **삭제(TSD.md 4.5 ④ — 얼룩·노이즈 가짜 조각 제거)**는 구현됨: 후보별 "빼기" 토글
- * (되살리기 가능 — 실수 복구, 강요 금지 톤)로 뺀 조각은 확정에서 제외된다.
+ * 저장" — 기획서 2.6 탈출구, 상시 개방·원탭)로 빠져나간다. 보정 액션(TSD.md 4.5) 중
+ * 구현된 것:
+ * - **④ 삭제** — 후보별 "빼기" 토글(되살리기 가능 — 실수 복구, 강요 금지 톤).
+ *   뺀 조각은 확정에서 제외된다.
+ * - **① 합치기** — "위와 합치기"로 잘못 쪼개진 인접 조각을 병합: 두 bbox의 합집합을
+ *   cleanedFull에서 재크롭(expo-image-manipulator)해 한 조각으로 만든다. 실수 복구는
+ *   "자동 검출로 되돌리기"(빼기·합치기 전부 초기화 — 병합별 되돌리기 스택은 과설계,
+ *   DECISIONS_NEEDED 15).
  * 완료 조건은 2.6 그대로 — 유효 조각 1개 이상 또는 통짜 저장(전부 빼면 통짜만 가능).
  * 확정 시 확정 조각이 위젯 풀에 편입되고 위젯이 즉시 갱신된다(TSD.md 5.1·5.2 —
  * 기획서 결정 4 '볼 때마다 랜덤'의 풀이 통째 썸네일에서 확정 조각으로 바뀐다).
  *
- * 다음 걸음 (TODO — TSD.md 4.5 보정 액션): 합치기/나누기/박스 조절/순서 지정,
+ * 다음 걸음 (TODO — TSD.md 4.5 보정 액션): 나누기/박스 조절/순서 지정,
  * 그리고 목록 대신 이진화 이미지 위 번호 박스 오버레이 표시. 지금은 목록 형태다.
  *
  * 실행 환경: segmentLetterImage는 개발 빌드 전용(OpenCV 네이티브 모듈) —
@@ -44,13 +51,68 @@ type Props = {
 type Phase =
   | { name: 'idle' }
   | { name: 'running' }
+  // candidates: 보정 작업본 — 합치기가 이 배열을 바꾼다. result.segments는 자동 검출
+  //   원본 그대로 남아 "자동 검출로 되돌리기"의 복귀 지점이 된다.
   // excluded: "빼기"(삭제 액션)로 제외한 후보의 index 집합 — 확정 시 이 조각들은 빠진다.
-  // 남는 조각의 index는 재번호하지 않는다: idx는 순서 용도뿐이라 갭이 무해하고,
-  // bbox·파일명(line-<index>.jpg) 대응이 그대로 유지된다 (DECISIONS_NEEDED 12).
-  | { name: 'review'; result: SegmentationResult; excluded: ReadonlySet<number> }
+  //   남는 조각의 index는 재번호하지 않는다: idx는 순서 용도뿐이라 갭이 무해하고,
+  //   bbox·파일명 대응이 그대로 유지된다 (DECISIONS_NEEDED 12). 합친 조각은 위쪽
+  //   조각의 index를 물려받는다 — 같은 이유.
+  // busy: 합치기 재크롭 진행 중 — 그동안 모든 조작 버튼을 잠근다(경쟁 상태 방지).
+  | {
+      name: 'review';
+      result: SegmentationResult;
+      candidates: SegmentCandidate[];
+      excluded: ReadonlySet<number>;
+      busy: boolean;
+      mergeError: string | null;
+    }
   | { name: 'saving' }
   | { name: 'done'; segmentCount: number }
   | { name: 'error'; message: string };
+
+/**
+ * 합치기(TSD.md 4.5 ① — 잘못 쪼개진 인접 조각 병합): 두 후보 bbox의 합집합을
+ * cleanedFull에서 재크롭해 한 조각으로 만든다.
+ *
+ * OpenCV를 다시 로드하지 않는 이유: 합집합 크롭은 순수 사각형 자르기라
+ * expo-image-manipulator(이터레이션 12에서 실측한 SDK 57 클래스 API)로 충분하다.
+ * 산출물은 saveAsync가 캐시에 저장한다 — 후보는 확정 전까지 캐시가 맞는 자리
+ * (확정 시 persistSegmentationResult가 문서 폴더로 옮긴다).
+ */
+async function mergeCandidates(
+  result: SegmentationResult,
+  upper: SegmentCandidate,
+  lower: SegmentCandidate
+): Promise<SegmentCandidate> {
+  const { imageWidth, imageHeight } = result;
+  const a = upper.boundingBox;
+  const b = lower.boundingBox;
+  const x0 = Math.min(a.x, b.x);
+  const y0 = Math.min(a.y, b.y);
+  const x1 = Math.max(a.x + a.w, b.x + b.w);
+  const y1 = Math.max(a.y + a.h, b.y + b.h);
+  // 정규화 → 픽셀: 바깥쪽으로 내림/올림(합집합이 잘리지 않게) 후 이미지 경계로 클램프.
+  const px = Math.max(0, Math.floor(x0 * imageWidth));
+  const py = Math.max(0, Math.floor(y0 * imageHeight));
+  const pw = Math.max(1, Math.min(imageWidth - px, Math.ceil(x1 * imageWidth) - px));
+  const ph = Math.max(1, Math.min(imageHeight - py, Math.ceil(y1 * imageHeight) - py));
+  const cropped = await ImageManipulator.manipulate(result.cleanedFullUri)
+    .crop({ originX: px, originY: py, width: pw, height: ph })
+    .renderAsync();
+  const saved = await cropped.saveAsync({ format: SaveFormat.JPEG, compress: OUTPUT_JPEG_QUALITY });
+  return {
+    index: Math.min(upper.index, lower.index), // 위쪽 번호 유지 — 재번호 안 함(DECISIONS 12)
+    granularity: upper.granularity, // 지금은 둘 다 'line' — 문장 승격(0단계 종속)과 무관
+    cropUri: saved.uri,
+    boundingBox: {
+      x: px / imageWidth,
+      y: py / imageHeight,
+      w: pw / imageWidth,
+      h: ph / imageHeight,
+    },
+    aspectRatio: pw / ph,
+  };
+}
 
 // processing_status(DECISIONS_NEEDED 9 매핑)별 시작 안내 — 재실행은 통째 교체임을 알린다
 function idleStatusText(processingStatus: string): string {
@@ -77,7 +139,14 @@ export default function SegmentationReviewPanel({
     setPhase({ name: 'running' });
     try {
       const result = await segmentLetterImage(originalImagePath);
-      setPhase({ name: 'review', result, excluded: new Set() });
+      setPhase({
+        name: 'review',
+        result,
+        candidates: result.segments,
+        excluded: new Set(),
+        busy: false,
+        mergeError: null,
+      });
     } catch (e) {
       // Expo Go면 여기로 온다 — segmentLetterImage의 안내 메시지를 그대로 보여준다
       setPhase({ name: 'error', message: e instanceof Error ? e.message : String(e) });
@@ -87,11 +156,57 @@ export default function SegmentationReviewPanel({
   // "빼기"/"되살리기" 토글 — 삭제 액션(TSD.md 4.5 ④). 원탭 실행취소가 되므로
   // 확인 다이얼로그 없이 즉시 반영한다(빼도 확정 전까지는 아무것도 사라지지 않는다).
   const toggleExcluded = (index: number) => {
-    if (phase.name !== 'review') return;
+    if (phase.name !== 'review' || phase.busy) return;
     const excluded = new Set(phase.excluded);
     if (excluded.has(index)) excluded.delete(index);
     else excluded.add(index);
     setPhase({ ...phase, excluded });
+  };
+
+  // "위와 합치기" — 합치기 액션(TSD.md 4.5 ①). 바로 위의 안 뺀 후보와 병합한다.
+  // 재크롭이 비동기라 busy로 다른 조작을 잠근다 — 잠금 중엔 captured phase가 최신이다.
+  const mergeWithAbove = async (index: number) => {
+    if (phase.name !== 'review' || phase.busy) return;
+    const { result, candidates, excluded } = phase;
+    const pos = candidates.findIndex((c) => c.index === index);
+    if (pos < 0 || excluded.has(index)) return;
+    let abovePos = -1;
+    for (let i = pos - 1; i >= 0; i--) {
+      if (!excluded.has(candidates[i].index)) {
+        abovePos = i;
+        break;
+      }
+    }
+    if (abovePos < 0) return; // 위에 안 뺀 조각이 없다 — 버튼도 안 그려진다(방어)
+    setPhase({ ...phase, busy: true, mergeError: null });
+    try {
+      const merged = await mergeCandidates(result, candidates[abovePos], candidates[pos]);
+      const next = candidates.slice();
+      next[abovePos] = merged;
+      next.splice(pos, 1);
+      setPhase({ ...phase, candidates: next, busy: false, mergeError: null });
+    } catch (e) {
+      // 실패해도 후보 목록은 그대로 — 검토 작업을 잃지 않는다(에러 화면으로 안 보냄)
+      setPhase({
+        ...phase,
+        busy: false,
+        mergeError: e instanceof Error ? e.message : String(e),
+      });
+    }
+  };
+
+  // 합치기 실수 복구 — 병합별 되돌리기 스택 대신 자동 검출 직후로 통째 복귀
+  // (빼기도 함께 초기화 — "자동 검출로 되돌리기"라는 이름 그대로. DECISIONS_NEEDED 15).
+  const resetToAutoDetected = () => {
+    if (phase.name !== 'review' || phase.busy) return;
+    setPhase({
+      name: 'review',
+      result: phase.result,
+      candidates: phase.result.segments,
+      excluded: new Set(),
+      busy: false,
+      mergeError: null,
+    });
   };
 
   // segmentsToKeep = 확정에 담을 조각. 빈 배열 = ★통짜 후퇴(기획서 2.6 탈출구) 또는
@@ -165,21 +280,33 @@ export default function SegmentationReviewPanel({
   }
 
   if (phase.name === 'review') {
-    const { result, excluded } = phase;
-    const kept = result.segments.filter((seg) => !excluded.has(seg.index));
+    const { result, candidates, excluded, busy, mergeError } = phase;
+    const kept = candidates.filter((seg) => !excluded.has(seg.index));
+    const edited = candidates !== result.segments; // 합치기가 한 번이라도 일어났는가
     return (
       <View style={styles.panel}>
         <ScrollView style={styles.candidateList} contentContainerStyle={styles.candidateListContent}>
           <Text style={styles.reviewHeader}>
-            {result.segments.length > 0
-              ? `줄 조각 후보 ${result.segments.length}개 — 위에서 아래 순서예요.`
+            {candidates.length > 0
+              ? `줄 조각 후보 ${candidates.length}개 — 위에서 아래 순서예요.`
               : '줄 조각을 찾지 못했어요.'}
           </Text>
-          {result.segments.length === 0 && (
+          {candidates.length === 0 && (
             <Text style={styles.subText}>이 편지는 통째로 저장하고 한 장으로 만나는 게 좋겠어요.</Text>
           )}
-          {result.segments.map((seg) => {
+          {mergeError != null && (
+            <Text style={styles.subText}>합치지 못했어요 — {mergeError}</Text>
+          )}
+          {edited && (
+            <Pressable disabled={busy} onPress={resetToAutoDetected}>
+              <Text style={styles.resetLinkText}>자동 검출로 되돌리기</Text>
+            </Pressable>
+          )}
+          {candidates.map((seg, pos) => {
             const isExcluded = excluded.has(seg.index);
+            // 합치기(4.5 ①)는 위쪽의 안 뺀 조각과만 — 뺀 조각과 합치면 삭제 액션과 모순
+            const canMergeUp =
+              !isExcluded && candidates.slice(0, pos).some((c) => !excluded.has(c.index));
             return (
               <View
                 key={seg.index}
@@ -199,31 +326,53 @@ export default function SegmentationReviewPanel({
                   ]}
                   resizeMode="contain"
                 />
-                {/* 삭제 액션(TSD.md 4.5 ④) — 얼룩·노이즈 가짜 조각을 빼기. 되살리기 가능 */}
-                <Pressable style={styles.excludeButton} onPress={() => toggleExcluded(seg.index)}>
-                  <Text style={styles.excludeButtonText}>
-                    {isExcluded ? '되살리기' : '빼기'}
-                  </Text>
-                </Pressable>
+                <View style={styles.rowButtons}>
+                  {/* 삭제 액션(TSD.md 4.5 ④) — 얼룩·노이즈 가짜 조각을 빼기. 되살리기 가능 */}
+                  <Pressable
+                    style={styles.rowButton}
+                    disabled={busy}
+                    onPress={() => toggleExcluded(seg.index)}
+                  >
+                    <Text style={styles.rowButtonText}>{isExcluded ? '되살리기' : '빼기'}</Text>
+                  </Pressable>
+                  {/* 합치기 액션(TSD.md 4.5 ①) — 잘못 쪼개진 줄을 위 조각과 병합 */}
+                  {canMergeUp && (
+                    <Pressable
+                      style={styles.rowButtonSecond}
+                      disabled={busy}
+                      onPress={() => mergeWithAbove(seg.index)}
+                    >
+                      <Text style={styles.rowButtonText}>위와 합치기</Text>
+                    </Pressable>
+                  )}
+                </View>
               </View>
             );
           })}
         </ScrollView>
         {/* 완료 조건(기획서 2.6): 유효 조각 1개 이상일 때만 조각 확정 가능 — 전부 빼면 통짜만 */}
         {kept.length > 0 && (
-          <Pressable style={styles.primaryButton} onPress={() => confirmResult(result, kept)}>
+          <Pressable
+            style={styles.primaryButton}
+            disabled={busy}
+            onPress={() => confirmResult(result, kept)}
+          >
             <Text style={styles.primaryButtonText}>
-              {kept.length < result.segments.length
+              {kept.length < candidates.length
                 ? `남은 조각 ${kept.length}개로 새기기`
                 : '이 조각들로 새기기'}
             </Text>
           </Pressable>
         )}
-        {kept.length === 0 && result.segments.length > 0 && (
+        {kept.length === 0 && candidates.length > 0 && (
           <Text style={styles.subText}>조각을 전부 뺐어요 — 통째로만 저장할 수 있어요.</Text>
         )}
         {/* ★탈출구 — 항상 원탭으로 열려 있다. 보정을 강요하지 않는다 (기획서 2.6) */}
-        <Pressable style={styles.secondaryButton} onPress={() => confirmResult(result, [])}>
+        <Pressable
+          style={styles.secondaryButton}
+          disabled={busy}
+          onPress={() => confirmResult(result, [])}
+        >
           <Text style={styles.secondaryButtonText}>이 편지는 통째로만 저장</Text>
         </Pressable>
       </View>
@@ -290,14 +439,31 @@ const styles = StyleSheet.create({
   candidateIndexExcluded: { color: '#b3bcb6', textDecorationLine: 'line-through' },
   candidateImage: { flex: 1, marginLeft: 8 },
   candidateImageExcluded: { opacity: 0.3 },
-  excludeButton: {
-    marginLeft: 8,
+  rowButtons: { marginLeft: 8, alignItems: 'stretch' },
+  rowButton: {
     paddingVertical: 6,
     paddingHorizontal: 10,
     borderRadius: 8,
     backgroundColor: '#e6ece8',
+    alignItems: 'center',
   },
-  excludeButtonText: { fontSize: 12, fontWeight: '600', color: '#4b5a52' },
+  rowButtonSecond: {
+    marginTop: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    backgroundColor: '#e6ece8',
+    alignItems: 'center',
+  },
+  rowButtonText: { fontSize: 12, fontWeight: '600', color: '#4b5a52' },
+  resetLinkText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#2e8b6f',
+    textAlign: 'center',
+    marginBottom: 10,
+    textDecorationLine: 'underline',
+  },
   primaryButton: {
     backgroundColor: '#2e8b6f',
     borderRadius: 12,
