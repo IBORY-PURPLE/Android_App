@@ -2,7 +2,32 @@
 
 > 매 반복 시작 시 이 파일부터 읽는다. 규칙·범위는 overnight_task.md, 제품 결정은 ..\기획서.md, 실행 계획은 ..\개발계획.md.
 
-**반복 횟수(검증 통과 커밋 기준): 9**
+**반복 횟수(검증 통과 커밋 기준): 10**
+
+---
+
+## 이터레이션 10 — expo-widgets 안드로이드 지원 실측 스파이크 + 1단계 마무리 점검 (2026-07-18)
+
+**한 일**
+- 이터레이션 9의 다음 후보 ① 착수: `expo-widgets` 안드로이드 지원 실측 스파이크(TSD.md 부록 A ★차단). 결과 — **미지원 확정**:
+  - 공식 문서(docs.expo.dev/versions/v57.0.0/sdk/widgets/): `platforms: ['ios']`, 소개도 "iOS home screen widgets and Live Activities", 안드로이드/Jetpack Glance 언급 0회, 위젯 크기도 iOS 전용(`systemSmall` 등)만, Expo Go 미지원 명시.
+  - npm: `expo-widgets` 57.0.0~57.0.6 존재하나 iOS 전용을 뒤집는 근거 없음.
+- 지시대로 **설치하지 않고**(iOS 전용 네이티브 모듈 — Expo Go 범위만 깨짐) DECISIONS_NEEDED.md 항목 3에 실측 결과 + 후퇴 경로(**Jetpack Glance 네이티브 직접 작성** — prebuild `android/` + Kotlin, 개발 빌드 필요) 기록 후 후보 ②로 전환.
+- 후보 ② 수행: overnight_task.md '이번 루프의 범위' 대비 1단계 마무리 점검표 작성 — **1단계 완성 목표 전부 충족**(편지함 목록/상세 · 갤러리 선택 · sqlite 저장 · 메타 입력 · 보기모드 3종 뼈대 + 범위 외 승격 편지 삭제). MORNING_REPORT.md를 이터레이션 7~10 기준으로 갱신(실기 미확인 항목: 편지 삭제·보기모드 전환).
+- 코드 변경 없음(문서 증분). 새 의존성 없음.
+
+**검증 결과 (게이트 3종)**
+- `npx tsc --noEmit` — 통과 (에러 0)
+- `npx expo-doctor` — 통과 (20/20 checks)
+- `npx expo export -p android` — 통과 (번들 무에러, 644 modules)
+
+**커밋:** `d80574a` docs: expo-widgets 안드로이드 미지원 실측 스파이크 기록 + 1단계 마무리 점검 (MORNING_REPORT 갱신)
+
+**사람이 눈으로 볼 것:** DECISIONS_NEEDED.md 항목 3 — Glance 네이티브 직접 작성 후퇴 경로 승인 여부(승인 시 TSD.md 5장·부록 A ★차단 갱신 필요). 에뮬레이터 실기: 편지 삭제(이터레이션 7)·보기모드 전환(이터레이션 8).
+
+**다음 후보 (작은 순)**
+1. (사람 승인 후) 3단계 자리 표시 — Glance 네이티브 전제의 위젯 TODO 자리 문서/파일(앱 자바스크립트 번들과 분리 유지 — 네이티브 코드라 자연 분리. Expo Go 범위 밖 작업은 자리·TODO까지만).
+2. 잔여 다듬기(범위 내 소소한 것) — 예: 편지함 목록에 저장 이미지 썸네일 표시(현재 텍스트 행만). 단 오버엔지니어링 경계.
 
 ---
 
