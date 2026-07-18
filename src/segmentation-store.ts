@@ -71,7 +71,7 @@ export function deleteSegmentationDir(letterId: string): void {
 export type PersistedSegmentationFiles = {
   /** 문서 폴더 segments/<letterId>/cleaned-full.jpg 의 file:// 경로 */
   cleanedFullUri: string;
-  /** 확정 조각(빈 배열 = 통짜 후퇴). idx 오름차순 = segment_order 순서. */
+  /** 확정 조각(빈 배열 = 통짜 후퇴). 배열 순서 = 받은 result.segments 순서 = segment_order 순서. */
   segments: { index: number; granularity: SegmentGranularity; uri: string }[];
 };
 
@@ -104,7 +104,8 @@ export async function persistSegmentationResult(
     moved.push({ seg, segmentId: Crypto.randomUUID(), cropAssetId: Crypto.randomUUID(), cropFile });
   }
 
-  // ② + ③ DB 행 — 한 트랜잭션. 조각 순서는 idx 오름차순 = segment_order 배열 순서.
+  // ② + ③ DB 행 — 한 트랜잭션. segment_order = 받은 segments 배열 순서(보정 UI의 표시
+  // 순서 — '순서 지정' 재정렬이 반영된 순서다. idx는 검출 번호일 뿐 순서의 원천이 아니다).
   const cleanedAssetId = Crypto.randomUUID();
   await db.withTransactionAsync(async () => {
     await deleteSegmentationRows(db, letterId);

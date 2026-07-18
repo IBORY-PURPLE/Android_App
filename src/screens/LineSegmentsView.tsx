@@ -10,7 +10,7 @@ import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-nati
  * 새 이미지 생성·세그멘테이션 실행은 하지 않는다(그건 SegmentationReviewPanel의 일).
  *
  * 순서 규칙: letter.segment_order(확정 segment id의 JSON 배열 — 보정 액션 '순서 지정'이
- * 나중에 이 배열을 고친다)를 우선하고, 배열이 없거나 깨졌으면 segment.idx 오름차순으로
+ * 확정 시점에 이 배열을 정한다)를 우선하고, 배열이 없거나 깨졌으면 segment.idx 오름차순으로
  * 후퇴한다. TSD.md 6.5의 "segment_order 순으로 문장 스크럽"에 대응하는 첫 걸음 —
  * 지금은 세로 목록이고, 스크럽(넘겨 보기)·핀치 줌은 다음 걸음이다.
  *

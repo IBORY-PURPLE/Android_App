@@ -24,13 +24,16 @@ import { updateLetterWidgetSafe } from '../widgets/update-letter-widget';
  *   뺀 조각은 확정에서 제외된다.
  * - **① 합치기** — "위와 합치기"로 잘못 쪼개진 인접 조각을 병합: 두 bbox의 합집합을
  *   cleanedFull에서 재크롭(expo-image-manipulator)해 한 조각으로 만든다. 실수 복구는
- *   "자동 검출로 되돌리기"(빼기·합치기 전부 초기화 — 병합별 되돌리기 스택은 과설계,
+ *   "자동 검출로 되돌리기"(빼기·합치기·순서 전부 초기화 — 병합별 되돌리기 스택은 과설계,
  *   DECISIONS_NEEDED 15).
+ * - **⑤ 순서 지정** — 행별 ▲/▼로 노출 순서 재정렬(배열 이웃 교환 — 순수 JS, 재크롭 없음).
+ *   확정 시 배열 순서가 그대로 letter.segment_order가 된다(persistSegmentationResult가
+ *   받은 순서대로 기록 — 항목 11 계약의 실사용: LineSegmentsView가 이 순서로 그린다).
  * 완료 조건은 2.6 그대로 — 유효 조각 1개 이상 또는 통짜 저장(전부 빼면 통짜만 가능).
  * 확정 시 확정 조각이 위젯 풀에 편입되고 위젯이 즉시 갱신된다(TSD.md 5.1·5.2 —
  * 기획서 결정 4 '볼 때마다 랜덤'의 풀이 통째 썸네일에서 확정 조각으로 바뀐다).
  *
- * 다음 걸음 (TODO — TSD.md 4.5 보정 액션): 나누기/박스 조절/순서 지정,
+ * 다음 걸음 (TODO — TSD.md 4.5 보정 액션): 나누기/박스 조절,
  * 그리고 목록 대신 이진화 이미지 위 번호 박스 오버레이 표시. 지금은 목록 형태다.
  *
  * 실행 환경: segmentLetterImage는 개발 빌드 전용(OpenCV 네이티브 모듈) —
@@ -51,7 +54,8 @@ type Props = {
 type Phase =
   | { name: 'idle' }
   | { name: 'running' }
-  // candidates: 보정 작업본 — 합치기가 이 배열을 바꾼다. result.segments는 자동 검출
+  // candidates: 보정 작업본 — 합치기·순서 지정이 이 배열을 바꾼다. 배열 순서 = 표시 순서 =
+  //   확정 시 segment_order(받은 순서 그대로 기록된다). result.segments는 자동 검출
   //   원본 그대로 남아 "자동 검출로 되돌리기"의 복귀 지점이 된다.
   // excluded: "빼기"(삭제 액션)로 제외한 후보의 index 집합 — 확정 시 이 조각들은 빠진다.
   //   남는 조각의 index는 재번호하지 않는다: idx는 순서 용도뿐이라 갭이 무해하고,
@@ -195,6 +199,20 @@ export default function SegmentationReviewPanel({
     }
   };
 
+  // "▲/▼" — 순서 지정 액션(TSD.md 4.5 ⑤). 배열상 이웃과 자리 교환(순수 JS — 재크롭 없음).
+  // 뺀 조각과의 교환도 허용한다 — 뺀 조각은 확정에서 빠지므로 남는 조각끼리의 상대
+  // 순서만 결과에 남지만, 화면 위치는 그대로 움직여 보인다(직관 우선).
+  const moveCandidate = (index: number, delta: -1 | 1) => {
+    if (phase.name !== 'review' || phase.busy) return;
+    const { candidates } = phase;
+    const pos = candidates.findIndex((c) => c.index === index);
+    const target = pos + delta;
+    if (pos < 0 || target < 0 || target >= candidates.length) return;
+    const next = candidates.slice();
+    [next[pos], next[target]] = [next[target], next[pos]];
+    setPhase({ ...phase, candidates: next });
+  };
+
   // 합치기 실수 복구 — 병합별 되돌리기 스택 대신 자동 검출 직후로 통째 복귀
   // (빼기도 함께 초기화 — "자동 검출로 되돌리기"라는 이름 그대로. DECISIONS_NEEDED 15).
   const resetToAutoDetected = () => {
@@ -282,13 +300,13 @@ export default function SegmentationReviewPanel({
   if (phase.name === 'review') {
     const { result, candidates, excluded, busy, mergeError } = phase;
     const kept = candidates.filter((seg) => !excluded.has(seg.index));
-    const edited = candidates !== result.segments; // 합치기가 한 번이라도 일어났는가
+    const edited = candidates !== result.segments; // 합치기·순서 지정이 한 번이라도 일어났는가
     return (
       <View style={styles.panel}>
         <ScrollView style={styles.candidateList} contentContainerStyle={styles.candidateListContent}>
           <Text style={styles.reviewHeader}>
             {candidates.length > 0
-              ? `줄 조각 후보 ${candidates.length}개 — 위에서 아래 순서예요.`
+              ? `줄 조각 후보 ${candidates.length}개 — 이 순서 그대로 새겨져요.`
               : '줄 조각을 찾지 못했어요.'}
           </Text>
           {candidates.length === 0 && (
@@ -344,6 +362,30 @@ export default function SegmentationReviewPanel({
                     >
                       <Text style={styles.rowButtonText}>위와 합치기</Text>
                     </Pressable>
+                  )}
+                  {/* 순서 지정 액션(TSD.md 4.5 ⑤) — 노출 순서 재정렬(이웃 교환) */}
+                  {!isExcluded && (
+                    <View style={styles.moveButtonRow}>
+                      <Pressable
+                        style={[styles.moveButton, pos === 0 && styles.moveButtonDisabled]}
+                        disabled={busy || pos === 0}
+                        onPress={() => moveCandidate(seg.index, -1)}
+                        accessibilityLabel="위로 이동"
+                      >
+                        <Text style={styles.rowButtonText}>▲</Text>
+                      </Pressable>
+                      <Pressable
+                        style={[
+                          styles.moveButton,
+                          pos === candidates.length - 1 && styles.moveButtonDisabled,
+                        ]}
+                        disabled={busy || pos === candidates.length - 1}
+                        onPress={() => moveCandidate(seg.index, 1)}
+                        accessibilityLabel="아래로 이동"
+                      >
+                        <Text style={styles.rowButtonText}>▼</Text>
+                      </Pressable>
+                    </View>
                   )}
                 </View>
               </View>
@@ -456,6 +498,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   rowButtonText: { fontSize: 12, fontWeight: '600', color: '#4b5a52' },
+  moveButtonRow: { flexDirection: 'row', marginTop: 6, gap: 6 },
+  moveButton: {
+    flex: 1,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: '#e6ece8',
+    alignItems: 'center',
+  },
+  moveButtonDisabled: { opacity: 0.35 },
   resetLinkText: {
     fontSize: 12,
     fontWeight: '600',
