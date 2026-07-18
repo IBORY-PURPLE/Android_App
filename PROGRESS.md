@@ -2,7 +2,31 @@
 
 > 매 반복 시작 시 이 파일부터 읽는다. 규칙·범위는 overnight_task.md, 제품 결정은 ..\기획서.md, 실행 계획은 ..\개발계획.md.
 
-**반복 횟수(검증 통과 커밋 기준): 1**
+**반복 횟수(검증 통과 커밋 기준): 2**
+
+---
+
+## 이터레이션 2 — expo-sqlite 최소 데이터 계층 (2026-07-18)
+
+**한 일**
+- `npx expo install expo-sqlite` (~57.0.1, Expo Go 내장. app.json에 config plugin 자동 추가됨).
+- 코드 작성 전 https://docs.expo.dev/versions/v57.0.0/sdk/sqlite/ 에서 실제 API 확인(`openDatabaseAsync`/`SQLiteProvider`/`execAsync`).
+- `src/db.ts` 신설: TSD.md 6.3 'expo-sqlite 스키마 초안' 그대로 **letter**(편지 메타: 애칭·날짜 등)·**asset**(이미지 파일 경로) 두 테이블만 `CREATE TABLE IF NOT EXISTS`로 초기화. segment(2단계)·favorite(Phase 1)은 그 단계에서 추가 — 미리 만들지 않음.
+- `App.tsx`: `SQLiteProvider(databaseName='letters.db', onInit=initLetterDb)`로 감싸고, DB가 실제 열렸는지 보여주는 상태 한 줄(`로컬 DB 준비됨 · 편지 N통`) 추가. BUILD #3.
+
+**검증 결과 (게이트 3종)**
+- `npx tsc --noEmit` — 통과 (에러 0)
+- `npx expo-doctor` — 통과 (20/20 checks)
+- `npx expo export -p android` — 통과 (번들 무에러, 612 modules)
+
+**커밋:** `23ee54e` feat: expo-sqlite 최소 데이터 계층 (letter·asset 테이블 초기화)
+
+**다음 후보 (작은 순)**
+1. 편지함 화면 뼈대 — letter 테이블을 읽는 빈 목록 + "편지 추가" 진입점 (내비게이션은 최소한으로)
+2. expo-image-picker로 갤러리에서 사진 선택 → 화면 표시 (Expo Go 내장, docs 확인 후)
+3. 편지 메타(애칭·날짜) 입력 폼 → letter/asset INSERT 연결 (expo-file-system으로 이미지 복사 포함)
+4. 편지 상세 화면 + 보기모드 3종 뼈대 (통짜/줄만/영역 — 실제 분할은 2단계 스캐폴드로)
+5. (뼈대만) OpenCV 세그멘테이션 인터페이스 + TODO / Glance 위젯 자리 표시
 
 ---
 
