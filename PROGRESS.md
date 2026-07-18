@@ -2,7 +2,32 @@
 
 > 매 반복 시작 시 이 파일부터 읽는다. 규칙·범위는 overnight_task.md, 제품 결정은 ..\기획서.md, 실행 계획은 ..\개발계획.md.
 
-**반복 횟수(검증 통과 커밋 기준): 19**
+**반복 횟수(검증 통과 커밋 기준): 20**
+
+---
+
+## 이터레이션 20 — 확정 시 위젯 갱신 연결 (확정 조각의 위젯 풀 편입 — 결정 4의 완성) (2026-07-18)
+
+**한 일**
+- 이터레이션 19의 다음 후보 ② 채택(①합치기보다 작고 제품 가치가 큼): **세그멘테이션 확정 → 위젯 풀 반영** — 위젯이 "편지 통째 썸네일"이 아니라 **확정된 문장 조각**을 보여주게 되는 순간(TSD.md 5.2 "전체 문장 풀 = 스캔해 확정한 모든 조각", 기획서 결정 4).
+- `letter-widget-thumbs.ts`: **풀 편입 규칙(채택 근거는 DECISIONS_NEEDED 13)** — 확정 조각 1개 이상이면 그 편지의 통짜 썸네일을 지우고 `<letterId>__<granularity>-<idx>.jpg` 조각 썸네일로 **교체**(공존 시 같은 편지 이중 노출), ★통짜 후퇴면 cleanedFull로 통짜 썸네일 재생성(재확정 후에도 편지가 풀에서 안 빠지게). `syncLetterWidgetThumbnailsAfterSegmentation` 신설 + 다운스케일 로직을 `writeThumbFile` 헬퍼로 공용화(720px·JPEG 0.85 그대로). **최근 표시 이력 키를 letterId → 풀 엔트리 키**(TSD.md 5.2 "직전 표시 조각" — 통짜 키 = letterId라 기존 이력 파일과 하위 호환, 마이그레이션 0). `deleteLetterWidgetThumbnail` → `deleteLetterWidgetThumbnails`(통짜 + 조각 전부 삭제 — 편지 삭제 시 조각 썸네일 잔존 방지, LetterDetailScreen 호출부 갱신).
+- `segmentation-store.ts`: `persistSegmentationResult`가 영구화 파일 위치(`PersistedSegmentationFiles`)를 반환 — 저장 로직 변경 0, 반환값만 추가.
+- `SegmentationReviewPanel.tsx` 확정 흐름: persist 성공 → 위젯 풀 동기화(try/catch — **실패해도 확정은 유효**, 풀은 다음 확정 때 재동기화) → `updateLetterWidgetSafe()`(TSD.md 5.1 즉시 반영 — Expo Go에서는 no-op). 딥링크는 파일 이름 `__` 앞 letterId 파싱으로 여전히 "그 조각이 속한 편지 상세"(TSD.md 5.5) — LetterWidget 코드 변경 0(주석만 현행화).
+- 새 의존성 0, 새 Expo API 0(expo-image-manipulator·expo-file-system 기존 실측 API 재사용 — docs 확인 대상 없음). 앱 본체 Expo Go 불변(확정 경로는 개발 빌드 전용, 위젯 호출은 no-op 안전 함수).
+
+**검증 결과 (게이트 3종)**
+- `npx tsc --noEmit` — 통과 (에러 0)
+- `npx expo-doctor` — 통과 (20/20 checks)
+- `npx expo export -p android` — 통과 (번들 무에러)
+
+**커밋:** (이 커밋) feat: 확정 시 위젯 갱신 연결 (확정 조각의 위젯 풀 편입 + 이력 조각 단위)
+
+**사람이 눈으로 볼 것 (실기 확인 필요):** 개발 빌드 — ① 조각 확정 직후 홈 위젯이 **줄 조각**(가로로 긴 손글씨 한 줄)으로 바뀌는지, 30분 갱신·재추가 때 같은 편지의 다른 조각/다른 편지로 도는지 ② 조각 위젯 탭 → 그 편지 상세가 뜨는지(딥링크 letterId 파싱) ③ 통짜 후퇴 재확정 → 위젯이 cleanedFull 통짜로 돌아오는지 ④ 편지 삭제 → 그 편지의 조각 썸네일이 위젯에서 사라지는지. Expo Go — 앱 본체 평소대로(확정 경로 진입 불가), 콘솔 에러 0.
+
+**다음 후보 (작은 순)**
+1. 보정 액션 '합치기'(TSD.md 4.5 ①) — 인접 조각 병합. bbox 합집합으로 cleanedFull에서 재크롭 필요(OpenCV 또는 expo-image-manipulator crop) — 삭제보다 한 단계 무겁다.
+2. 위젯 미리보기를 앱 화면에 복제(TSD.md 5.6) — LetterWidget 레이아웃을 앱 일반 화면에서 같은 풀로 렌더(Fast Refresh 루프로 디자인 확정, Expo Go에서도 검증 가능한 소품).
+3. TSD.md 5장 개정(react-native-android-widget 전제) + 6.3 processing_status 매핑(DECISIONS_NEEDED 9)·풀 편입 규칙(13) 명문화 — 사람 승인 후.
 
 ---
 

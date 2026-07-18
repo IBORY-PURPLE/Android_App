@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { Alert, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { deleteSegmentationDir, deleteSegmentationRows } from '../segmentation-store';
-import { deleteLetterWidgetThumbnail } from '../widgets/letter-widget-thumbs';
+import { deleteLetterWidgetThumbnails } from '../widgets/letter-widget-thumbs';
 import { updateLetterWidgetSafe } from '../widgets/update-letter-widget';
 import LineSegmentsView from './LineSegmentsView';
 import SegmentationReviewPanel from './SegmentationReviewPanel';
@@ -113,9 +113,9 @@ export default function LetterDetailScreen({ letterId, onBackPress }: Props) {
       } catch {
         // 무시 — 고아 파일만 남는다
       }
-      // 위젯 썸네일도 지우고 위젯 갱신 — 지운 편지가 위젯에 계속 뜨지 않게
+      // 위젯 썸네일(통짜 + 조각 전부)도 지우고 위젯 갱신 — 지운 편지가 위젯에 계속 뜨지 않게
       try {
-        deleteLetterWidgetThumbnail(letterId);
+        deleteLetterWidgetThumbnails(letterId);
       } catch {
         // 무시 — 고아 썸네일만 남는다
       }

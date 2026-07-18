@@ -28,7 +28,7 @@ import * as Crypto from 'expo-crypto';
 import { Directory, File, Paths } from 'expo-file-system';
 import type { SQLiteDatabase } from 'expo-sqlite';
 
-import type { SegmentCandidate, SegmentationResult } from './segmentation';
+import type { SegmentCandidate, SegmentationResult, SegmentGranularity } from './segmentation';
 
 const SEGMENTS_DIR_NAME = 'segments';
 
@@ -67,18 +67,27 @@ export function deleteSegmentationDir(letterId: string): void {
   if (dir.exists) dir.delete();
 }
 
+/** 영구화가 끝난 파일들의 위치 — 위젯 썸네일 동기화(letter-widget-thumbs)의 원천. */
+export type PersistedSegmentationFiles = {
+  /** 문서 폴더 segments/<letterId>/cleaned-full.jpg 의 file:// 경로 */
+  cleanedFullUri: string;
+  /** 확정 조각(빈 배열 = 통짜 후퇴). idx 오름차순 = segment_order 순서. */
+  segments: { index: number; granularity: SegmentGranularity; uri: string }[];
+};
+
 /**
  * 보정 UI에서 확정된 세그멘테이션 결과를 영구화한다 (파일 머리 주석의 ①②③).
  *
  * @param result 확정된 산출물 — cleanedFullUri·segments의 파일은 캐시의 후보 파일이며
  *   이 함수가 문서 폴더로 옮긴다(move — 캐시에는 남지 않는다).
  *   segments가 빈 배열이면 '통짜 후퇴'(TSD.md 4.5): cleanedFull만 영구화한다.
+ * @returns 영구화된 파일 위치 — 호출자가 위젯 풀 동기화(TSD.md 5.2)에 쓴다.
  */
 export async function persistSegmentationResult(
   db: SQLiteDatabase,
   letterId: string,
   result: SegmentationResult
-): Promise<void> {
+): Promise<PersistedSegmentationFiles> {
   // ① 파일 먼저 — 이전 확정본 폴더를 비우고(재확정 = 통째 교체) 후보 파일을 옮긴다.
   deleteSegmentationDir(letterId);
   const dir = persistedSegmentationDir(letterId);
@@ -136,4 +145,13 @@ export async function persistSegmentationResult(
       ]
     );
   });
+
+  return {
+    cleanedFullUri: cleanedFile.uri,
+    segments: moved.map(({ seg, cropFile }) => ({
+      index: seg.index,
+      granularity: seg.granularity,
+      uri: cropFile.uri,
+    })),
+  };
 }

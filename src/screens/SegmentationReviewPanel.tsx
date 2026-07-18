@@ -8,6 +8,8 @@ import {
   type SegmentationResult,
 } from '../segmentation';
 import { persistSegmentationResult } from '../segmentation-store';
+import { syncLetterWidgetThumbnailsAfterSegmentation } from '../widgets/letter-widget-thumbs';
+import { updateLetterWidgetSafe } from '../widgets/update-letter-widget';
 
 /**
  * 세그멘테이션 보정 UI 1보 — 실행 → 후보 목록 → 확정 / ★통짜 후퇴 (TSD.md 4.5, 기획서 2.6).
@@ -18,6 +20,8 @@ import { persistSegmentationResult } from '../segmentation-store';
  * **삭제(TSD.md 4.5 ④ — 얼룩·노이즈 가짜 조각 제거)**는 구현됨: 후보별 "빼기" 토글
  * (되살리기 가능 — 실수 복구, 강요 금지 톤)로 뺀 조각은 확정에서 제외된다.
  * 완료 조건은 2.6 그대로 — 유효 조각 1개 이상 또는 통짜 저장(전부 빼면 통짜만 가능).
+ * 확정 시 확정 조각이 위젯 풀에 편입되고 위젯이 즉시 갱신된다(TSD.md 5.1·5.2 —
+ * 기획서 결정 4 '볼 때마다 랜덤'의 풀이 통째 썸네일에서 확정 조각으로 바뀐다).
  *
  * 다음 걸음 (TODO — TSD.md 4.5 보정 액션): 합치기/나누기/박스 조절/순서 지정,
  * 그리고 목록 대신 이진화 이미지 위 번호 박스 오버레이 표시. 지금은 목록 형태다.
@@ -97,7 +101,20 @@ export default function SegmentationReviewPanel({
     setPhase({ name: 'saving' });
     try {
       const chosen = { ...result, segments: segmentsToKeep };
-      await persistSegmentationResult(db, letterId, chosen);
+      const persisted = await persistSegmentationResult(db, letterId, chosen);
+      // 확정 조각을 위젯 풀에 편입(TSD.md 5.2 "풀 = 확정한 모든 조각" — 결정 4의 완성:
+      // 위젯이 통째 썸네일 대신 확정된 문장 조각을 보여주게 된다). 동기화 실패는
+      // 확정을 되돌리지 않는다 — 풀만 이전 상태로 남고 다음 확정 때 다시 맞춰진다.
+      try {
+        await syncLetterWidgetThumbnailsAfterSegmentation(
+          letterId,
+          persisted.cleanedFullUri,
+          persisted.segments
+        );
+      } catch {
+        // 무시 — 위젯 풀은 표시 품질 문제일 뿐, 확정 데이터(DB·segments/)는 온전하다.
+      }
+      updateLetterWidgetSafe(); // 위젯 즉시 갱신(TSD.md 5.1 — Expo Go에서는 no-op)
       setPhase({ name: 'done', segmentCount: chosen.segments.length });
       onPersisted();
     } catch (e) {

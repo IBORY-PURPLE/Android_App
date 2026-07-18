@@ -5,10 +5,18 @@ import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
  * 앱 ↔ 위젯 썸네일 공유 저장소 (TSD.md 1.4 / 5.4).
  *
  * 위젯은 원본 고해상도를 로드하지 않는다(위젯 메모리 예산 — TSD.md 5.4).
- * 앱이 편지 저장 시점에 위젯 표시 크기로 다운스케일한 썸네일을
- * 문서 폴더 widget-thumbs/<letterId>.jpg 로 만들어 두고,
+ * 앱이 위젯 표시 크기로 다운스케일한 썸네일을 문서 폴더 widget-thumbs/ 에 만들어 두고,
  * 위젯 태스크 핸들러는 이 폴더의 파일 목록에서 랜덤 1개를 file:// 경로로 읽는다
  * (같은 앱 패키지 = 같은 내부 저장소 — 안드로이드에는 App Group이 필요 없다).
+ *
+ * 풀 구성(TSD.md 5.2 "전체 문장 풀 = 스캔해 확정한 모든 조각" — DECISIONS_NEEDED 13):
+ * - 편지 저장 시: 통짜 썸네일 `<letterId>.jpg` (조각 확정 전의 근사 — 원칙 3 재발견).
+ * - 세그멘테이션 확정 시: 그 편지의 풀 엔트리를 확정 줄 조각 썸네일
+ *   `<letterId>__<granularity>-<idx>.jpg` 들로 교체 (통짜 썸네일은 제거 —
+ *   위젯이 "편지 통째"가 아니라 "확정된 문장 조각"을 보여주는 순간, 기획서 결정 4).
+ * - ★통짜 후퇴(조각 0개) 확정 시: 조각 썸네일을 지우고 cleanedFull로 통짜 썸네일 재생성.
+ * 파일 이름의 `__` 앞부분이 letterId(UUID — `__`를 포함하지 않는다) → 위젯 탭 딥링크는
+ * 여전히 "그 조각이 속한 편지 상세"(TSD.md 5.5)로 간다.
  *
  * 이 모듈은 순수 Expo API(expo-file-system·expo-image-manipulator)만 쓴다 —
  * Expo Go에서도 동작하므로 조건부 로드가 필요 없다.
@@ -35,14 +43,9 @@ function thumbsDir(): Directory {
   return new Directory(Paths.document, THUMBS_DIR_NAME);
 }
 
-/**
- * 편지 저장 시점에 위젯용 다운스케일 썸네일을 만든다.
- * 원본이 이미 작으면 리사이즈 없이 저장만 한다(손글씨 업스케일 금지 — 원칙 1).
- */
-export async function createLetterWidgetThumbnail(
-  letterId: string,
-  sourceImageUri: string
-): Promise<void> {
+// 다운스케일 썸네일 1개를 풀 파일로 굳힌다. 원본이 이미 작으면 리사이즈 없이 저장만
+// 한다(손글씨 업스케일 금지 — 원칙 1).
+async function writeThumbFile(sourceImageUri: string, fileName: string): Promise<void> {
   const loaded = await ImageManipulator.manipulate(sourceImageUri).renderAsync();
   const finalRef =
     loaded.width > THUMB_MAX_WIDTH_PX
@@ -55,36 +58,92 @@ export async function createLetterWidgetThumbnail(
 
   const dir = thumbsDir();
   dir.create({ intermediates: true, idempotent: true });
-  const dest = new File(dir, `${letterId}.jpg`);
-  if (dest.exists) dest.delete(); // 같은 편지 재생성 시 교체
+  const dest = new File(dir, fileName);
+  if (dest.exists) dest.delete(); // 같은 이름 재생성 시 교체
   await new File(saved.uri).move(dest);
 }
 
-/** 편지 삭제 시 위젯 썸네일도 함께 지운다(지운 편지가 위젯에 남지 않게). */
-export function deleteLetterWidgetThumbnail(letterId: string): void {
-  const file = new File(thumbsDir(), `${letterId}.jpg`);
-  if (file.exists) file.delete();
+/** 편지 저장 시점에 위젯용 통짜 썸네일을 만든다 (조각 확정 전의 풀 엔트리). */
+export async function createLetterWidgetThumbnail(
+  letterId: string,
+  sourceImageUri: string
+): Promise<void> {
+  await writeThumbFile(sourceImageUri, `${letterId}.jpg`);
+}
+
+/**
+ * 한 편지의 풀 엔트리 전부(통짜 `<letterId>.jpg` + 조각 `<letterId>__*.jpg`)를 지운다.
+ * 편지 삭제 시(지운 편지가 위젯에 남지 않게), 그리고 확정 시 교체의 앞 단계로 쓴다.
+ */
+export function deleteLetterWidgetThumbnails(letterId: string): void {
+  const dir = thumbsDir();
+  if (!dir.exists) return;
+  for (const entry of dir.list()) {
+    if (!(entry instanceof File)) continue;
+    const baseName = entry.name.replace(/\.jpg$/, '');
+    if (baseName === letterId || baseName.startsWith(`${letterId}__`)) entry.delete();
+  }
+}
+
+/** persistSegmentationResult가 돌려주는 영구화 조각 — 위젯 썸네일의 원천. */
+export type PersistedSegmentThumbSource = {
+  index: number;
+  granularity: string;
+  /** 문서 폴더 segments/<letterId>/ 에 영구화된 크롭 파일의 file:// 경로 */
+  uri: string;
+};
+
+/**
+ * 세그멘테이션 확정 직후 위젯 풀을 그 편지의 확정 산출물로 맞춘다 (파일 머리 주석의
+ * 풀 구성 규칙 — TSD.md 5.2, DECISIONS_NEEDED 13).
+ * - 조각 1개 이상: 통짜 썸네일 제거 + 조각별 썸네일 생성 (풀 = 확정 조각).
+ * - 조각 0개(★통짜 후퇴): 조각 썸네일 제거 + cleanedFull로 통짜 썸네일 재생성
+ *   (재확정으로 조각 엔트리가 사라져도 편지가 풀에서 빠지지 않게).
+ * 실패해도 확정 자체는 유효하다 — 호출자가 try/catch로 감싼다(다음 확정 때 다시 맞춰짐).
+ */
+export async function syncLetterWidgetThumbnailsAfterSegmentation(
+  letterId: string,
+  cleanedFullUri: string,
+  segments: PersistedSegmentThumbSource[]
+): Promise<void> {
+  deleteLetterWidgetThumbnails(letterId); // 재확정 = 통째 교체 (segmentation-store와 같은 시맨틱)
+  if (segments.length > 0) {
+    for (const seg of segments) {
+      await writeThumbFile(seg.uri, `${letterId}__${seg.granularity}-${seg.index}.jpg`);
+    }
+  } else {
+    await writeThumbFile(cleanedFullUri, `${letterId}.jpg`);
+  }
 }
 
 /** 위젯이 표시할 썸네일 1개 — 파일 경로와, 파일 이름에 담긴 편지 id(딥링크용). */
 export type LetterWidgetThumbnail = {
   /** file:// 경로 */
   uri: string;
-  /** 썸네일 파일 이름 <letterId>.jpg 의 letterId — 위젯 탭 딥링크(TSD.md 5.5)에 쓴다. */
+  /**
+   * 이 썸네일이 속한 편지의 id — 위젯 탭 딥링크(TSD.md 5.5 "그 조각이 속한 편지
+   * 상세")에 쓴다. 통짜 `<letterId>.jpg`든 조각 `<letterId>__…jpg`든 `__` 앞이 편지 id.
+   */
   letterId: string;
+  /** 풀 엔트리 키(파일 이름에서 .jpg 뺀 것) — 최근 표시 이력은 조각 단위(TSD.md 5.2). */
+  poolKey: string;
 };
 
-/** 위젯이 표시할 썸네일 후보 전체. */
+/** 위젯이 표시할 썸네일 후보 전체 — 파일 목록이 곧 표시 풀이다(TSD.md 1.4). */
 export function listLetterWidgetThumbnails(): LetterWidgetThumbnail[] {
   const dir = thumbsDir();
   if (!dir.exists) return [];
   return dir
     .list()
     .filter((entry): entry is File => entry instanceof File)
-    .map((file) => ({
-      uri: file.uri,
-      letterId: file.name.replace(/\.jpg$/, ''),
-    }));
+    .map((file) => {
+      const poolKey = file.name.replace(/\.jpg$/, '');
+      return {
+        uri: file.uri,
+        letterId: poolKey.split('__')[0],
+        poolKey,
+      };
+    });
 }
 
 // ── 최근 표시 이력 (TSD.md 5.2 "최근 K개 제외 + 균등 랜덤") ──────────────────
@@ -104,8 +163,14 @@ function recentHistoryFile(): File {
   return new File(Paths.document, RECENT_HISTORY_FILE_NAME);
 }
 
-/** 최근 표시한 letterId 목록(최신이 앞). 파일이 없거나 깨졌으면 빈 목록. */
-function readRecentLetterIds(): string[] {
+/**
+ * 최근 표시한 풀 엔트리 키 목록(최신이 앞). 파일이 없거나 깨졌으면 빈 목록.
+ * TSD.md 5.2 "직전 표시 조각의 즉시 재노출만 막는다" — 조각 풀 편입 후 이력도
+ * 편지 단위가 아니라 풀 엔트리(조각) 단위다. 이전 이력(letterId만 기록)은 통짜
+ * 엔트리 키와 같아서 그대로 호환되고, 조각으로 교체된 편지의 옛 키는 풀에 없어
+ * 자연히 걸러진다.
+ */
+function readRecentPoolKeys(): string[] {
   try {
     const file = recentHistoryFile();
     if (!file.exists) return [];
@@ -129,20 +194,20 @@ export function pickRandomLetterWidgetThumbnail(): LetterWidgetThumbnail | null 
   const thumbs = listLetterWidgetThumbnails();
   if (thumbs.length === 0) return null;
 
-  // 이력에서 지운 편지 등 풀에 없는 id를 걸러낸 뒤, 풀 크기에 맞춰 K를 줄인다.
-  const poolIds = new Set(thumbs.map((thumb) => thumb.letterId));
-  const recentIds = readRecentLetterIds().filter((id) => poolIds.has(id));
+  // 이력에서 지운 편지·교체된 조각 등 풀에 없는 키를 걸러낸 뒤, 풀 크기에 맞춰 K를 줄인다.
+  const poolKeys = new Set(thumbs.map((thumb) => thumb.poolKey));
+  const recentKeys = readRecentPoolKeys().filter((key) => poolKeys.has(key));
   const effectiveK = Math.min(RECENT_EXCLUDE_K, thumbs.length - 1);
-  const excluded = new Set(recentIds.slice(0, effectiveK));
+  const excluded = new Set(recentKeys.slice(0, effectiveK));
 
   // excluded ⊆ 풀이고 크기 ≤ 풀 크기 - 1 이므로 후보는 항상 1개 이상 남는다.
-  const candidates = thumbs.filter((thumb) => !excluded.has(thumb.letterId));
+  const candidates = thumbs.filter((thumb) => !excluded.has(thumb.poolKey));
   const picked = candidates[Math.floor(Math.random() * candidates.length)];
 
   try {
     const nextRecent = [
-      picked.letterId,
-      ...recentIds.filter((id) => id !== picked.letterId),
+      picked.poolKey,
+      ...recentKeys.filter((key) => key !== picked.poolKey),
     ].slice(0, RECENT_EXCLUDE_K);
     recentHistoryFile().write(JSON.stringify(nextRecent));
   } catch {
