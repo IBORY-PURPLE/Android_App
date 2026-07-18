@@ -2,7 +2,35 @@
 
 > 매 반복 시작 시 이 파일부터 읽는다. 규칙·범위는 overnight_task.md, 제품 결정은 ..\기획서.md, 실행 계획은 ..\개발계획.md.
 
-**반복 횟수(검증 통과 커밋 기준): 10**
+**반복 횟수(검증 통과 커밋 기준): 11**
+
+---
+
+## 이터레이션 11 — react-native-android-widget 실측 스파이크 → 채택 + 위젯 최소 구성 (2026-07-18)
+
+**한 일**
+- 규칙 v2 스코프 (1) 착수: **`react-native-android-widget` SDK 57/신아키텍처 호환 실측 → 긍정 → 채택(자율)**:
+  - npm: 0.21.0(2026-07-11 갱신), peer `expo >=54` → SDK 57 충족. 공식 문서: 신아키텍처 지원 명시, RN 0.76+(현재 0.86.0), Expo config plugin 제공(위젯 실동작은 개발 빌드 필요).
+  - 설치본 소스 실측: `registerWidgetTaskHandler`는 순수 JS(`AppRegistry.registerHeadlessTask`) / 라이브러리 로드는 환경 따라 `TurboModuleRegistry.getEnforcing` throw 가능 → **index.ts에서 try/catch + 지연 require 조건부 로드**(Expo Go 앱 본체 불변 — overnight_task.md "조건부/분리 로드" 준수).
+- `npx expo install react-native-android-widget`(0.21.0) 후 최소 구성:
+  - `app.json`: plugin 설정 — 위젯 1개(name `Letter`, label 손편지, 3×2 셀, minWidth 180dp/minHeight 110dp, updatePeriodMillis 1800000=30분·시스템 최솟값). plugin이 prebuild에 `android.package`를 요구(소스 실측)해 **`com.theone.sonpyeonji` 채택(자율)** — Play 제출 전 변경 가능.
+  - `src/widgets/LetterWidget.tsx`: 위젯 순수 함수 — 지금은 **빈 위젯 온보딩 카드**(TSD.md 5.3 "첫 편지를 기다리는 중" — 기획서 P0 '빈 위젯 첫인상 처리')만. `'use no memo'`(공식 문서 권장). 편지 이미지 랜덤 표시는 TODO 주석으로 다음 증분 명시.
+  - `src/widgets/widget-task-handler.tsx`: WIDGET_ADDED/UPDATE/RESIZED → renderWidget. CLICK 딥링크(TSD.md 5.5)는 다음 증분.
+- DECISIONS_NEEDED.md: 항목 3에 채택(자율)+근거 추가, 항목 4(패키지 이름·위젯 구성값) 신설. TSD.md 5장은 "Glance 직접" 전제라 개정 필요 — 사람 리뷰 대상으로 기록만.
+
+**검증 결과 (게이트 3종)**
+- `npx tsc --noEmit` — 통과 (에러 0)
+- `npx expo-doctor` — 통과 (20/20 checks)
+- `npx expo export -p android` — 통과 (번들 무에러, 668 modules — 위젯 코드 포함)
+
+**커밋:** (이 커밋) feat: react-native-android-widget 채택 + 위젯 최소 구성 (빈 위젯 온보딩 카드)
+
+**사람이 눈으로 볼 것:** 위젯 실동작은 **개발 빌드(`npx expo run:android`) 필요** — Expo Go로는 확인 불가(앱 본체만 확인 가능). 개발 빌드 후 홈 화면에 '손편지' 위젯 추가 → 온보딩 카드 확인. DECISIONS_NEEDED 3(라이브러리 채택)·4(패키지 이름) 리뷰.
+
+**다음 후보 (작은 순)**
+1. 위젯에 저장된 편지 이미지 1장 랜덤 표시(기획서 결정 4) — 앱이 저장 시점에 위젯용 다운스케일 썸네일을 만들어 두고(TSD.md 1.4·5.4), widgetTaskHandler가 파일 목록에서 랜덤 1개를 `ImageWidget`으로 렌더 + `requestWidgetUpdate` 연동. (위젯 프로세스는 expo-sqlite 직접 접근 불가 전제 확인 포함)
+2. 스코프 v2 (2): `react-native-fast-opencv` 설치·신아키텍처 호환 실측 + `segmentLetterImage` 기본 구현(합성 이미지 스모크까지 — 실물 튜닝 금지).
+3. TSD.md 5장 개정(react-native-android-widget 전제로) — 사람 승인 후.
 
 ---
 

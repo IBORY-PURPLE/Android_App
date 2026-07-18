@@ -20,3 +20,15 @@
   - **npm 레지스트리:** `expo-widgets` 57.x는 57.0.0~57.0.6이 존재하나, iOS 전용이라는 문서 사실을 뒤집는 근거 없음.
 - **왜 루프에서 못 정하나:** 후퇴 경로 채택은 아키텍처 결정 + TSD.md 5장(위젯) 문서 개정이 걸린 사람 판단. **권장 후퇴 경로(TSD.md 부록 A에 이미 명시): Jetpack Glance 네이티브 위젯 직접 작성** — Expo prebuild로 생성되는 `android/` 폴더에 Kotlin + Glance 코드를 얹고, 개발 빌드(`npx expo run:android`)로 확인. 위젯 코드는 앱 자바스크립트 번들 밖(네이티브)이므로 Expo Go로 도는 앱 본체와 자연 분리된다.
 - **루프가 대신 한 것:** `expo-widgets`를 **설치하지 않았다**(iOS 전용 네이티브 모듈 — 넣어도 안드로이드에서 무의미하고 Expo Go 범위만 깨짐). 실측 결과만 기록하고 후보 ②(1단계 마무리 점검 + MORNING_REPORT.md 갱신)로 전환. 3단계 자리 표시(TODO 문서 파일)는 Glance 네이티브 전제로 다음 반복 후보에 남김.
+- **채택(자율, 이터레이션 11 — 규칙 v2 자율 결정 모드):** 후퇴 경로로 **`react-native-android-widget` 라이브러리를 채택**하고 설치했다(Kotlin Glance 직접 작성 대신). **근거(실측):**
+  - npm: 최신 0.21.0(2026-07-11 갱신), peerDependencies `expo: '>=54.0.0'` → **SDK 57 충족**.
+  - 공식 문서(saleksovski.github.io/react-native-android-widget): **신아키텍처(New Architecture) 지원 명시**, RN 0.76+ 지원(현재 0.86.0), Expo는 config plugin 제공(개발 빌드 필요 — Expo Go에는 네이티브 모듈 없음).
+  - 설치본 소스 실측: 위젯 등록(`registerWidgetTaskHandler`)은 순수 JS(`AppRegistry.registerHeadlessTask`)이고, 네이티브 모듈 부재 시 로드가 throw할 수 있는 경로가 있어 index.ts에서 **try/catch + 지연 require 조건부 로드**로 분리 — Expo Go 앱 본체 불변.
+  - 기획서 원칙 6(혼자 출시 가능한 최소 제품): 위젯 레이아웃을 TSX로 유지 — Kotlin/Glance 학습·prebuild 커스텀 코드 없이 위젯 구현 가능. 안 되면 그때 Glance 네이티브로 후퇴(원 경로 유지).
+  - TSD.md 5장은 "Jetpack Glance 직접" 전제로 서술돼 있어 **개정 필요**(라이브러리 내부는 RemoteViews 기반 — 5장 제목·1.4 공유 저장소 서술 손질). 사람 리뷰 대상으로 남김.
+
+## 4. 안드로이드 앱 패키지 이름 — `com.theone.sonpyeonji` 채택(자율, 이터레이션 11)
+
+- **무엇:** react-native-android-widget config plugin이 prebuild 시 `android.package`를 요구한다(없으면 throw — 설치본 plugin 소스 실측). app.json에 `android.package`가 없었다.
+- **채택(자율):** `"com.theone.sonpyeonji"` — 작업 공간 이름(TheOne) + 프로젝트 별칭(sonpyeonji, MORNING_REPORT에서 사용 중). **Play 제출 전까지는 자유롭게 변경 가능**(제출하면 영구 고정) — 범위 밖(제출 금지)이므로 지금은 임시 식별자 성격. 사람 확인 후 바꾸려면 app.json 한 줄 수정이면 된다.
+- **부수 채택(자율) — 위젯 최소 구성값:** 크기 3×2 셀(minWidth 180dp × minHeight 110dp) — 기획서 3.2.3 "[결정 필요] 위젯 크기: Medium 이상 권장"의 안드로이드 대응. `updatePeriodMillis` 1800000(30분) — 안드로이드 시스템 최솟값이자 TSD.md 5.1 "[결정 필요] 엔트리 간격 15/30/60분"의 중간값. 둘 다 위젯 실기 확인(개발 빌드) 때 재조정 가능.
