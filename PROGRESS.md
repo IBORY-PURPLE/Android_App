@@ -2,7 +2,31 @@
 
 > 매 반복 시작 시 이 파일부터 읽는다. 규칙·범위는 overnight_task.md, 제품 결정은 ..\기획서.md, 실행 계획은 ..\개발계획.md.
 
-**반복 횟수(검증 통과 커밋 기준): 17**
+**반복 횟수(검증 통과 커밋 기준): 18**
+
+---
+
+## 이터레이션 18 — '한 줄씩' 보기 실동작 (확정 조각 segment_order 순 표시 + 다시 나누기) (2026-07-18)
+
+**한 일**
+- 이터레이션 17의 다음 후보 ① 채택: `src/screens/LineSegmentsView.tsx` 신설 — `processing_status='ready'`(조각 1개 이상 확정)면 '한 줄씩'에서 보정 패널 대신 **확정 조각(segment JOIN asset kind='segmentCrop', granularity='line')을 segment_order 순으로 세로 목록 표시**(TSD.md 4.6 "모드 전환은 렌더 시점의 이미지 선택"). 순서는 **segment_order(JSON 배열) 우선·idx 후퇴**(깨진 JSON·배열에 없는 id 방어 — 보정 액션 '순서 지정'이 나중에 이 배열을 고치는 계약이라 표시가 이를 따름). 스크럽·핀치 줌(TSD.md 6.5 완성형)은 다음 걸음(주석 명시 — DECISIONS_NEEDED 11).
+- **"다시 나누기" 진입점 유지:** 조각 표시 하단 버튼 → 보정 패널(재확정 = 통째 교체, 항목 9) → 확정되면 자동으로 새 조각 표시 복귀(`reSegmenting` 로컬 상태 + onPersisted에서 해제). ★통짜 후퇴로 확정하면 status='cleaned'라 패널의 "통째로만 저장했어요" 안내가 남는다(4.6 "조각 없는 편지는 '통째로' 전용" 정합).
+- `LetterDetailScreen.tsx`: 상세 쿼리에 `segment_order` 추가, '한 줄씩' 분기 3단(ready+표시 / 보정 패널 / 원본 없음 자리 문구). LineSegmentsView는 원본 이미지를 요구하지 않음(확정 조각만으로 그림). 'ready'인데 조각 0개인 비정상 상태는 "다시 나누기"만 노출(방어). `SegmentationReviewPanel.tsx` 확정 완료 문구를 실동작에 맞게 갱신("'한 줄씩' 보기에서 이 조각들을 만나요").
+- 새 의존성 0, 새 Expo API 0(`getAllAsync`는 이터레이션 3에서 실측한 시그니처 그대로 — docs 확인 대상 없음).
+
+**검증 결과 (게이트 3종)**
+- `npx tsc --noEmit` — 통과 (에러 0)
+- `npx expo-doctor` — 통과 (20/20 checks)
+- `npx expo export -p android` — 통과 (번들 무에러, 695 modules)
+
+**커밋:** (이 커밋) feat: '한 줄씩' 보기 실동작 (확정 조각 segment_order 순 표시 + 다시 나누기)
+
+**사람이 눈으로 볼 것 (실기 확인 필요):** ① 개발 빌드 — 조각 확정(이터레이션 17 흐름) 후 '한 줄씩' 탭 → 조각이 위→아래 순서로 뜨는지, "다시 나누기" → 재확정 → 새 조각으로 바로 바뀌는지(통째 교체), 통짜 후퇴 후에는 '한 줄씩'이 보정 패널("통째로만 저장하기로 했어요")로 돌아가는지. ② Expo Go — 앱 본체가 평소대로 돌고(모든 편지가 'raw'라 이 화면은 안 뜸 — 보정 패널 그대로) 콘솔 에러 0인지.
+
+**다음 후보 (작은 순)**
+1. 보정 액션 1개부터(TSD.md 4.5) — 가장 값싼 삭제(후보 목록에서 가짜 조각 빼고 확정) 또는 합치기(인접 병합)를 SegmentationReviewPanel 후보 목록에 추가.
+2. 세그멘테이션 확정 시 위젯 갱신 연결 — 확정/재확정 후 updateLetterWidgetSafe 호출(위젯 풀은 아직 통째 썸네일이라 지금은 no-op에 가깝다 — TSD.md 5.2 조각 풀 편입은 그 다음).
+3. TSD.md 5장 개정(react-native-android-widget 전제) + 6.3 processing_status 매핑 명문화(DECISIONS_NEEDED 9) — 사람 승인 후.
 
 ---
 

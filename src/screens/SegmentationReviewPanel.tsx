@@ -117,7 +117,7 @@ export default function SegmentationReviewPanel({
         </Text>
         <Text style={styles.subText}>
           {phase.segmentCount > 0
-            ? "'한 줄씩' 보기가 이 조각들을 보여주는 건 다음 업데이트예요."
+            ? "'한 줄씩' 보기에서 이 조각들을 만나요."
             : "위젯과 보기에서는 편지 한 장('통째로')으로 만나요."}
         </Text>
         <Pressable style={styles.secondaryButton} onPress={() => setPhase({ name: 'idle' })}>

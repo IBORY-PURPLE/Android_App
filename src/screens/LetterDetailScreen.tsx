@@ -6,6 +6,7 @@ import { Alert, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { deleteSegmentationDir, deleteSegmentationRows } from '../segmentation-store';
 import { deleteLetterWidgetThumbnail } from '../widgets/letter-widget-thumbs';
 import { updateLetterWidgetSafe } from '../widgets/update-letter-widget';
+import LineSegmentsView from './LineSegmentsView';
 import SegmentationReviewPanel from './SegmentationReviewPanel';
 
 // letter + 원본 이미지 경로(asset.local_path)를 한 번에 읽는다 (스키마: src/db.ts)
@@ -15,6 +16,7 @@ type LetterDetailRow = {
   scanned_at: number;
   original_asset_id: string | null;
   processing_status: string;
+  segment_order: string | null;
   local_path: string | null;
 };
 
@@ -25,9 +27,10 @@ type Props = {
 
 // 보기 모드 3종 (기획서 결정 3: 편지 통째로 / 한 줄씩 / 한 문장씩).
 // TSD.md 4.6: 모드 전환은 렌더 시점의 이미지 선택일 뿐 — 새 이미지 생성이 아니다.
-// '통째로'는 실동작. '한 줄씩' 자리에는 세그멘테이션 보정 패널(SegmentationReviewPanel —
-// 실행 → 후보 목록 → 확정/통짜 후퇴)이 들어가 있고, 확정된 segmentCrop 조각을
-// 여기서 그리는 것은 다음 걸음이다 (TSD.md 4.6). '한 문장씩'은 0단계 종속 — 자리만.
+// '통째로'는 원본 이미지, '한 줄씩'은 확정 조각(processing_status='ready')이 있으면
+// LineSegmentsView(segment_order 순), 없으면 세그멘테이션 보정 패널
+// (SegmentationReviewPanel — 실행 → 후보 목록 → 확정/통짜 후퇴).
+// '한 문장씩'은 0단계 종속 — 자리만.
 type ViewMode = 'whole' | 'line' | 'sentence';
 
 const VIEW_MODES: { mode: ViewMode; label: string }[] = [
@@ -60,11 +63,14 @@ export default function LetterDetailScreen({ letterId, onBackPress }: Props) {
   const [viewMode, setViewMode] = useState<ViewMode>('whole');
   // 세그멘테이션 확정 후 letter 행(processing_status 등)을 다시 읽기 위한 트리거
   const [rowVersion, setRowVersion] = useState(0);
+  // '한 줄씩'에서 확정 조각 표시 대신 보정 패널로 들어간 상태 ("다시 나누기" 진입점).
+  // 확정(onPersisted)되면 false로 되돌려 새 조각을 바로 보여준다.
+  const [reSegmenting, setReSegmenting] = useState(false);
 
   useEffect(() => {
     db.getFirstAsync<LetterDetailRow>(
       `SELECT l.author_display_name, l.received_date, l.scanned_at, l.original_asset_id,
-              l.processing_status, a.local_path
+              l.processing_status, l.segment_order, a.local_path
        FROM letter l
        LEFT JOIN asset a ON a.id = l.original_asset_id
        WHERE l.id = ?`,
@@ -159,14 +165,25 @@ export default function LetterDetailScreen({ letterId, onBackPress }: Props) {
           ))}
         </View>
       )}
-      {viewMode === 'line' && row !== null && row.local_path !== null ? (
+      {viewMode === 'line' && row !== null && row.processing_status === 'ready' && !reSegmenting ? (
+        // '한 줄씩' 실동작 — 확정 조각을 segment_order 순으로 표시 (TSD.md 4.6).
+        // 원본 이미지가 없어도 확정 조각은 그릴 수 있어 local_path를 요구하지 않는다.
+        <LineSegmentsView
+          letterId={letterId}
+          segmentOrder={row.segment_order}
+          onReSegmentPress={() => setReSegmenting(true)}
+        />
+      ) : viewMode === 'line' && row !== null && row.local_path !== null ? (
         // 보정 패널: 실행 → 후보 목록 → 확정/★통짜 후퇴 (TSD.md 4.5, 기획서 2.6).
-        // TODO(다음 걸음): 확정된 segmentCrop 조각이 있으면 여기서 조각 이미지를 그린다 (TSD.md 4.6)
+        // 확정되면 reSegmenting을 풀어 새 조각(LineSegmentsView)을 바로 보여준다.
         <SegmentationReviewPanel
           letterId={letterId}
           originalImagePath={row.local_path}
           processingStatus={row.processing_status}
-          onPersisted={() => setRowVersion((n) => n + 1)}
+          onPersisted={() => {
+            setReSegmenting(false);
+            setRowVersion((n) => n + 1);
+          }}
         />
       ) : viewMode !== 'whole' && row !== null ? (
         // '한 문장씩'(0단계 종속 — 자리만) 또는 원본 이미지가 없어 줄 나누기가 불가능한 경우
