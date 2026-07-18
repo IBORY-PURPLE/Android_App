@@ -1,6 +1,9 @@
 import React from 'react';
 
-import { pickRandomLetterWidgetThumbnailUri } from './letter-widget-thumbs';
+import {
+  pickRandomLetterWidgetThumbnail,
+  type LetterWidgetThumbnail,
+} from './letter-widget-thumbs';
 
 /**
  * 앱 화면에서 홈 위젯 갱신을 요청한다 — 새 편지 저장·편지 삭제 직후 호출
@@ -21,15 +24,15 @@ export function updateLetterWidgetSafe(): void {
     requestWidgetUpdate({
       widgetName: 'Letter',
       renderWidget: (widgetInfo) => {
-        let thumbnailUri: string | null = null;
+        let thumbnail: LetterWidgetThumbnail | null = null;
         try {
-          thumbnailUri = pickRandomLetterWidgetThumbnailUri();
+          thumbnail = pickRandomLetterWidgetThumbnail();
         } catch {
-          thumbnailUri = null;
+          thumbnail = null;
         }
         return (
           <LetterWidget
-            thumbnailUri={thumbnailUri}
+            thumbnail={thumbnail}
             widthDp={widgetInfo.width}
             heightDp={widgetInfo.height}
           />

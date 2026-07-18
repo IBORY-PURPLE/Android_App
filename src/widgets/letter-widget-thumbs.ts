@@ -63,14 +63,25 @@ export function deleteLetterWidgetThumbnail(letterId: string): void {
   if (file.exists) file.delete();
 }
 
-/** 위젯이 표시할 썸네일 후보 전체 (file:// 경로 목록). */
-export function listLetterWidgetThumbnailUris(): string[] {
+/** 위젯이 표시할 썸네일 1개 — 파일 경로와, 파일 이름에 담긴 편지 id(딥링크용). */
+export type LetterWidgetThumbnail = {
+  /** file:// 경로 */
+  uri: string;
+  /** 썸네일 파일 이름 <letterId>.jpg 의 letterId — 위젯 탭 딥링크(TSD.md 5.5)에 쓴다. */
+  letterId: string;
+};
+
+/** 위젯이 표시할 썸네일 후보 전체. */
+export function listLetterWidgetThumbnails(): LetterWidgetThumbnail[] {
   const dir = thumbsDir();
   if (!dir.exists) return [];
   return dir
     .list()
     .filter((entry): entry is File => entry instanceof File)
-    .map((file) => file.uri);
+    .map((file) => ({
+      uri: file.uri,
+      letterId: file.name.replace(/\.jpg$/, ''),
+    }));
 }
 
 /**
@@ -81,8 +92,8 @@ export function listLetterWidgetThumbnailUris(): string[] {
  * 최근 표시 이력을 로컬 키-값 저장소에 남겨야 한다. 이 이력은 로컬 전용·동기화 금지
  * (새어나가면 읽음 확인이 된다 — 원칙 4 '관찰하지 않는다').
  */
-export function pickRandomLetterWidgetThumbnailUri(): string | null {
-  const uris = listLetterWidgetThumbnailUris();
-  if (uris.length === 0) return null;
-  return uris[Math.floor(Math.random() * uris.length)];
+export function pickRandomLetterWidgetThumbnail(): LetterWidgetThumbnail | null {
+  const thumbs = listLetterWidgetThumbnails();
+  if (thumbs.length === 0) return null;
+  return thumbs[Math.floor(Math.random() * thumbs.length)];
 }

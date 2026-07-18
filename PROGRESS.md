@@ -2,7 +2,34 @@
 
 > 매 반복 시작 시 이 파일부터 읽는다. 규칙·범위는 overnight_task.md, 제품 결정은 ..\기획서.md, 실행 계획은 ..\개발계획.md.
 
-**반복 횟수(검증 통과 커밋 기준): 12**
+**반복 횟수(검증 통과 커밋 기준): 13**
+
+---
+
+## 이터레이션 13 — 위젯 탭 → 편지 상세 딥링크 (TSD.md 5.5) (2026-07-18)
+
+**한 일**
+- 이터레이션 12의 다음 후보 ① 채택: **위젯 탭 → 표시 중인 편지의 상세로 딥링크**(TSD.md 5.5).
+- 코드 작성 전 실측: ① 라이브러리 clickAction — 설치본 소스(click-action.ts, RNWidgetProvider.java)에서 `"OPEN_URI"`(clickActionData `{ uri }` → 네이티브가 ACTION_VIEW 인텐트 직접 실행, JS WIDGET_CLICK 미발생)와 `"OPEN_APP"` 확인. ② expo-linking SDK 57 — 공식 문서(Expo Go 내장) + 설치본 소스에서 `getInitialURL`/`addEventListener('url')`/`parse()` 확인. `npx expo install expo-linking`(57.0.3).
+- `app.json`: `"scheme": "sonpyeonji"` 추가(패키지 이름과 정합 — DECISIONS_NEEDED 6). prebuild가 인텐트 필터를 만든다 — 위젯과 같이 개발 빌드에서만 유효.
+- `src/widgets/letter-deep-link.ts` 신설: `APP_SCHEME`·`letterDetailDeepLinkUri(letterId)`·`letterIdFromParsedDeepLink(hostname, path)` — 위젯이 만드는 URI와 앱이 되읽는 규칙을 한곳에. expo-linking을 import하지 않는 순수 문자열 모듈(위젯 헤드리스 컨텍스트 안전).
+- `letter-widget-thumbs.ts`: pick이 `{ uri, letterId }`(파일 이름 `<letterId>.jpg`의 id)를 돌려주도록 변경 → `LetterWidget.tsx` 썸네일 분기 루트에 `clickAction="OPEN_URI"` + `sonpyeonji://letter/<id>`, 온보딩 카드엔 `clickAction="OPEN_APP"`. 위젯 위에 다른 버튼 없음(TSD 5.5 — 별표 버튼 금지). `widget-task-handler.tsx`·`update-letter-widget.tsx` 프롭 정합.
+- `App.tsx`: `getInitialURL` + `addEventListener('url')`로 딥링크 수신 → `letter/<id>`면 상세 화면 전환. `useLinkingURL()` 훅 미사용 — 같은 URL 재수신(뒤로 → 같은 위젯 재탭) 때 리렌더가 없어 이벤트 직접 구독(주석에 근거). Expo Go(`exp://…/--/letter/<id>`)·개발 빌드(`sonpyeonji://…`) 파싱 형태 모두 처리(설치본 parse 소스 실측). BUILD #10.
+- fix-forward 1회: expo-linking 설치가 expo-constants 물리 사본 2개를 만들어 expo-doctor 실패 → `npm dedupe`로 해소(같은 57.0.6, 위치만 중복이었음).
+
+**검증 결과 (게이트 3종)**
+- `npx tsc --noEmit` — 통과 (에러 0)
+- `npx expo-doctor` — 통과 (20/20 checks, dedupe 후)
+- `npx expo export -p android` — 통과 (번들 무에러)
+
+**커밋:** (이 커밋) feat: 위젯 탭 → 편지 상세 딥링크 (OPEN_URI + expo-linking 수신)
+
+**사람이 눈으로 볼 것:** 개발 빌드(`npx expo run:android`)에서 ① 편지 있는 위젯 탭 → 그 편지 상세가 바로 뜨는지(앱 꺼짐/백그라운드/포그라운드 3상태 모두) ② 상세 → 뒤로 → 같은 위젯 재탭 → 다시 상세가 뜨는지 ③ 편지 0장 온보딩 카드 탭 → 앱(편지함)만 열리는지 ④ 위젯이 보여주던 편지와 열린 상세가 같은 편지인지(URI는 렌더 시점에 굳음 — DECISIONS_NEEDED 6 주의). Expo Go에서는 앱 본체가 평소대로 돌고(BUILD #10) 콘솔 에러 0인지.
+
+**다음 후보 (작은 순)**
+1. TSD.md 5.2 "직전 표시 즉시 재노출 방지" — 최근 표시 이력(로컬 전용·동기화 금지, 원칙 4)을 키-값 저장소에 저장, 풀 크기에 맞춰 K 자동 축소(TSD 5.3).
+2. 스코프 v2 (2): `react-native-fast-opencv` 설치·신아키텍처 호환 실측 + `segmentLetterImage` 기본 구현(합성 이미지 스모크까지 — 실물 튜닝 금지).
+3. TSD.md 5장 개정(react-native-android-widget 전제로) — 사람 승인 후.
 
 ---
 
