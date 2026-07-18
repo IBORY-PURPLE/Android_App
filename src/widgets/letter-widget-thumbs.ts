@@ -20,7 +20,10 @@ import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
  *   `ImageRef.saveAsync({ format, compress })` → 캐시 디렉터리에 저장된 { uri, ... }.
  *   레거시 manipulateAsync는 deprecated — 쓰지 않는다.
  * - expo-file-system: `Directory.list(): (Directory | File)[]`, `File.move(dest): Promise<void>`,
- *   `File.delete(): void`, `.exists: boolean` (build/internal/NativeFileSystem.types.d.ts).
+ *   `File.delete(): void`, `.exists: boolean`, `File.textSync(): string`(동기 읽기),
+ *   `File.write(content: string): void`(동기 쓰기 — 파일이 없으면 만들어 줌을
+ *   네이티브 소스 FileSystemFile.kt `write`의 `if (!exists) create()` 분기로 실측)
+ *   (build/internal/NativeFileSystem.types.d.ts).
  */
 
 // 위젯 3×2 셀(minWidth 180dp)이 고밀도 화면(~3x)에서 ~540px — 여유분 포함 720px면 충분하다.
@@ -84,16 +87,67 @@ export function listLetterWidgetThumbnails(): LetterWidgetThumbnail[] {
     }));
 }
 
+// ── 최근 표시 이력 (TSD.md 5.2 "최근 K개 제외 + 균등 랜덤") ──────────────────
+//
+// ★로컬 전용·동기화 금지(TSD.md 5.2): 이 이력은 순수하게 랜덤 품질 개선용이다.
+// 절대 클라우드에 올리거나 상대에게 동기화하지 않는다 — 새어나가는 순간
+// '읽음 확인'이 되어 원칙 4(관찰하지 않는다)를 위반한다.
+//
+// K=3 채택(자율) — 30분 갱신 기준 같은 편지가 ~2시간 안에 다시 안 뜨는 정도.
+// 풀이 작으면 min(K, 풀 크기 - 1)로 자동 축소(TSD.md 5.3 — 편지 1~2장의 반복은
+// 결함이 아니라 의도된 반복). 상수 하나라 실기 확인 후 재조정 쉽다.
+const RECENT_EXCLUDE_K = 3;
+const RECENT_HISTORY_FILE_NAME = 'widget-recent-letters.json';
+
+// 주의: widget-thumbs/ 폴더 안에 두면 파일 목록(= 표시 풀)에 섞이므로 문서 폴더 루트에 둔다.
+function recentHistoryFile(): File {
+  return new File(Paths.document, RECENT_HISTORY_FILE_NAME);
+}
+
+/** 최근 표시한 letterId 목록(최신이 앞). 파일이 없거나 깨졌으면 빈 목록. */
+function readRecentLetterIds(): string[] {
+  try {
+    const file = recentHistoryFile();
+    if (!file.exists) return [];
+    const parsed: unknown = JSON.parse(file.textSync());
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((id): id is string => typeof id === 'string');
+  } catch {
+    // 이력이 깨져도 위젯 표시는 계속돼야 한다 — 이력 없음으로 취급.
+    return [];
+  }
+}
+
 /**
  * 랜덤 썸네일 1개 — 기획서 결정 4(볼 때마다 랜덤)·2.5 표시 로직.
- * 지금은 균등 랜덤. 편지 0장이면 null(→ 온보딩 카드, 기획서 2.5 빈 상태 규칙).
+ * 편지 0장이면 null(→ 온보딩 카드, 기획서 2.5 빈 상태 규칙).
  *
- * TODO(다음 증분, TSD.md 5.2): "직전 표시 즉시 재노출 방지(최근 K개 제외)" —
- * 최근 표시 이력을 로컬 키-값 저장소에 남겨야 한다. 이 이력은 로컬 전용·동기화 금지
- * (새어나가면 읽음 확인이 된다 — 원칙 4 '관찰하지 않는다').
+ * TSD.md 5.2 "최근 K개 제외 + 균등 랜덤": 직전 표시 편지의 즉시 재노출을 막는다.
+ * 뽑은 결과는 최근 표시 이력 파일에 기록한다(위 로컬 전용 계약 참조).
  */
 export function pickRandomLetterWidgetThumbnail(): LetterWidgetThumbnail | null {
   const thumbs = listLetterWidgetThumbnails();
   if (thumbs.length === 0) return null;
-  return thumbs[Math.floor(Math.random() * thumbs.length)];
+
+  // 이력에서 지운 편지 등 풀에 없는 id를 걸러낸 뒤, 풀 크기에 맞춰 K를 줄인다.
+  const poolIds = new Set(thumbs.map((thumb) => thumb.letterId));
+  const recentIds = readRecentLetterIds().filter((id) => poolIds.has(id));
+  const effectiveK = Math.min(RECENT_EXCLUDE_K, thumbs.length - 1);
+  const excluded = new Set(recentIds.slice(0, effectiveK));
+
+  // excluded ⊆ 풀이고 크기 ≤ 풀 크기 - 1 이므로 후보는 항상 1개 이상 남는다.
+  const candidates = thumbs.filter((thumb) => !excluded.has(thumb.letterId));
+  const picked = candidates[Math.floor(Math.random() * candidates.length)];
+
+  try {
+    const nextRecent = [
+      picked.letterId,
+      ...recentIds.filter((id) => id !== picked.letterId),
+    ].slice(0, RECENT_EXCLUDE_K);
+    recentHistoryFile().write(JSON.stringify(nextRecent));
+  } catch {
+    // 이력 기록 실패는 표시를 막지 않는다 — 다음 갱신에서 다시 시도된다.
+  }
+
+  return picked;
 }

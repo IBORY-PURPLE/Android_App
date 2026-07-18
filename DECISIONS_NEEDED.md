@@ -47,3 +47,11 @@
 - **채택(자율) — URI `sonpyeonji://letter/<letterId>` + `clickAction "OPEN_URI"`:** 설치본 실측 — RNWidgetProvider.java(onReceive)가 OPEN_URI를 `ACTION_VIEW` 인텐트로 **네이티브에서 직접 실행**하며 JS의 WIDGET_CLICK은 발생하지 않는다(click-action.ts 주석과 일치). 이것이 TSD 5.5 "Glance actionStartActivity"의 이 라이브러리 대응이다. 편지 0장 온보딩 카드는 `"OPEN_APP"`(앱만 열기 → 첫 편지 담기 유도). 위젯 위에 별표 등 다른 버튼은 두지 않음(TSD 5.5 그대로).
 - **채택(자율) — 앱 쪽 수신은 expo-linking(57.0.3, Expo Go 내장) `getInitialURL` + `addEventListener('url')` 직접 구독:** `useLinkingURL()` 훅은 내부 setState라 **같은 URL을 다시 받아도 리렌더가 없어**(상세 → 뒤로 → 같은 위젯 재탭이 무시됨) 훅 대신 이벤트 직접 구독. `Linking.parse()` 동작은 설치본 소스(createURL.ts)로 실측 — 개발 빌드 `sonpyeonji://letter/<id>` → hostname 'letter'/path '<id>', Expo Go `exp://…/--/letter/<id>` → hostname null/path 'letter/<id>'. 두 형태를 모두 `letterIdFromParsedDeepLink`가 처리한다.
 - **주의(실기 확인 필요):** 위젯의 딥링크 URI는 **위젯 렌더 시점에 굳는다** — 탭 시점이 아니라 마지막 렌더 때 표시된 편지의 상세로 연결된다(다음 30분 갱신/저장·삭제 갱신 전까지는 화면에 보이는 그 편지와 일치하므로 의도된 동작). 개발 빌드에서 위젯 탭 → 그 편지 상세가 뜨는지 사람 확인 필요.
+
+## 7. 위젯 랜덤의 최근 제외 K 값·이력 저장 방식 — 채택(자율, 이터레이션 14)
+
+- **무엇:** TSD.md 5.2(최근 K개 제외 + 균등 랜덤)를 구현하려면 ① K 값(기획서 2.5는 K를 정하지 않음) ② 최근 표시 이력의 저장 위치·형식을 정해야 했다.
+- **채택(자율) — K = 3, 풀 크기에 맞춰 `min(K, 풀 크기 − 1)` 자동 축소:** 30분 `updatePeriodMillis` 갱신 기준 같은 편지가 대략 2시간 안에 다시 안 뜨는 정도. 편지 2장이면 직전 1장만 제외(교대 노출), 1장이면 제외 0(반복 허용 — TSD.md 5.3 "의도된 반복"). 상수 하나(`RECENT_EXCLUDE_K`)라 실기 확인 후 재조정이 쉽다. TSD 5.2의 "직전 표시 조각의 즉시 재노출만 막는다" 취지(가중치 등 과설계 금지) 안에서 최소 구현.
+- **채택(자율) — 이력은 문서 폴더 루트의 JSON 파일 `widget-recent-letters.json`:** 위젯 헤드리스 컨텍스트는 expo-sqlite를 쓰지 않기로 했으므로(항목 5 — 파일 목록 = 표시 풀) 이력도 같은 원칙으로 expo-file-system 파일에 둔다(새 의존성 0). `widget-thumbs/` 폴더 안에 두면 파일 목록이 곧 표시 풀이라 썸네일로 오인되므로 **문서 폴더 루트**에 둔다. `File.write`가 없는 파일을 만들어 줌은 네이티브 소스(FileSystemFile.kt `if (!exists) create()`)로 실측. 이력이 깨지면 빈 이력으로 취급, 기록 실패는 표시를 막지 않는다(둘 다 try/catch).
+- **★로컬 전용·동기화 금지(TSD.md 5.2 계약):** 이 이력은 랜덤 품질 개선용일 뿐이다. 클라우드 업로드·상대 동기화 금지 — 새어나가면 '읽음 확인'이 되어 원칙 4(관찰하지 않는다) 위반. 코드 주석에 같은 문구로 못박음.
+- **부수 효과:** 이력에 있는 id가 풀에 없으면(편지 삭제 등) 읽을 때 걸러진다 — 삭제 쪽 코드 변경 없음.
