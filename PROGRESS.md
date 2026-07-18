@@ -2,7 +2,30 @@
 
 > 매 반복 시작 시 이 파일부터 읽는다. 규칙·범위는 overnight_task.md, 제품 결정은 ..\기획서.md, 실행 계획은 ..\개발계획.md.
 
-**반복 횟수(검증 통과 커밋 기준): 5**
+**반복 횟수(검증 통과 커밋 기준): 6**
+
+---
+
+## 이터레이션 6 — 편지 상세 화면 (저장된 원본 이미지 표시) (2026-07-18)
+
+**한 일**
+- `src/screens/LetterDetailScreen.tsx` 신설: letter + asset을 `original_asset_id`로 LEFT JOIN해 한 번에 읽고(애칭·받은 날짜 헤더 + 저장된 원본 이미지 `resizeMode="contain"` 표시) "← 편지함으로" 복귀. 이미지/행이 없을 때 안내 문구 처리.
+- 코드 작성 전 API 확인: expo-sqlite `getFirstAsync<T>(source, params)` → `Promise<T | null>` — 설치된 SDK 57 타입 정의(node_modules/expo-sqlite/build/SQLiteDatabase.d.ts)에서 시그니처 확인.
+- `LetterListScreen.tsx`: 행을 `Pressable`로 바꾸고 `onLetterPress(letterId)` 전달.
+- `App.tsx`: 화면 상태를 `{ name: 'list' } | { name: 'add' } | { name: 'detail'; letterId }` 판별 유니언으로 확장 (여전히 내비게이션 라이브러리 없음). BUILD #7.
+- 새 의존성 없음. 보기모드 3종은 이 화면 위에 다음 증분으로 얹는다.
+
+**검증 결과 (게이트 3종)**
+- `npx tsc --noEmit` — 통과 (에러 0)
+- `npx expo-doctor` — 통과 (20/20 checks)
+- `npx expo export -p android` — 통과 (번들 무에러, 644 modules)
+
+**커밋:** `132d625` feat: 편지 상세 화면 (저장된 원본 이미지 표시 + 뒤로가기)
+
+**다음 후보 (작은 순)**
+1. 보기모드 3종 뼈대 — 편지 상세 화면에 통짜/줄만/영역 전환 UI. 통짜만 실동작(현재 이미지), 줄만/영역은 자리 + "2단계 세그멘테이션 후" TODO 안내. (개발계획.md 1단계 '보기모드 3종 뼈대')
+2. (뼈대만) OpenCV 세그멘테이션 인터페이스 + TODO — segment 산출물 타입·함수 시그니처만 (실제 구현은 0단계 실물 사진 이후)
+3. (뼈대만) Glance 위젯 자리 표시 — 3단계 스캐폴드
 
 ---
 
