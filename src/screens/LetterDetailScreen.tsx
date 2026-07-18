@@ -1,12 +1,14 @@
+import { File } from 'expo-file-system';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useEffect, useState } from 'react';
-import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 
 // letter + 원본 이미지 경로(asset.local_path)를 한 번에 읽는다 (스키마: src/db.ts)
 type LetterDetailRow = {
   author_display_name: string;
   received_date: number | null;
   scanned_at: number;
+  original_asset_id: string | null;
   local_path: string | null;
 };
 
@@ -19,18 +21,26 @@ type Props = {
  * 편지 상세 — 편지함에서 고른 편지의 저장된 원본 이미지를 크게 보여준다
  * (개발계획.md 1단계. 보기모드 3종은 다음 증분 — 지금은 원본 통짜 표시만).
  *
- * SDK 57 확인: expo-sqlite `getFirstAsync<T>(source, params)` → Promise<T | null>
- * (node_modules/expo-sqlite/build/SQLiteDatabase.d.ts에서 시그니처 확인).
+ * 삭제: 기획서 3.8 "받은 편지는 로컬에 영구 보관(사용자가 지우기 전까지)" —
+ * 지우는 건 사용자의 능동 행위이며, 결정 8(디지털은 사본, 실물이 원본)에 따라
+ * 사라지는 것은 앱 안의 사본뿐이다(letter·asset 행 + letters/ 이미지 사본).
+ *
+ * SDK 57 확인 (설치본 타입 정의에서 시그니처 확인):
+ * - expo-sqlite `getFirstAsync<T>(source, params)` → Promise<T | null>,
+ *   `runAsync` / `withTransactionAsync` (build/SQLiteDatabase.d.ts)
+ * - expo-file-system `File.delete(): void`(동기, 없으면 throw), `File.exists: boolean`
+ *   (build/internal/NativeFileSystem.types.d.ts)
  */
 export default function LetterDetailScreen({ letterId, onBackPress }: Props) {
   const db = useSQLiteContext();
   const [row, setRow] = useState<LetterDetailRow | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     db.getFirstAsync<LetterDetailRow>(
-      `SELECT l.author_display_name, l.received_date, l.scanned_at, a.local_path
+      `SELECT l.author_display_name, l.received_date, l.scanned_at, l.original_asset_id, a.local_path
        FROM letter l
        LEFT JOIN asset a ON a.id = l.original_asset_id
        WHERE l.id = ?`,
@@ -45,6 +55,39 @@ export default function LetterDetailScreen({ letterId, onBackPress }: Props) {
         setLoaded(true);
       });
   }, [db, letterId]);
+
+  const deleteLetter = async () => {
+    if (row === null || deleting) return;
+    setDeleting(true);
+    try {
+      await db.withTransactionAsync(async () => {
+        await db.runAsync('DELETE FROM letter WHERE id = ?', [letterId]);
+        if (row.original_asset_id !== null) {
+          await db.runAsync('DELETE FROM asset WHERE id = ?', [row.original_asset_id]);
+        }
+      });
+      // 이미지 사본 파일 정리 — DB가 이미 지워졌으므로 실패해도 고아 파일만 남는다(치명적 아님)
+      if (row.local_path !== null) {
+        try {
+          const file = new File(row.local_path);
+          if (file.exists) file.delete();
+        } catch {
+          // 무시 — 다음 스캔 저장에 영향 없음
+        }
+      }
+      onBackPress(); // 편지함으로 — 목록 화면이 다시 마운트되며 새로 읽는다
+    } catch (e) {
+      setError(`지우지 못했어요: ${String(e)}`);
+      setDeleting(false);
+    }
+  };
+
+  const confirmDelete = () => {
+    Alert.alert('이 편지를 지울까요?', '앱에 담아 둔 사본만 사라져요.\n실물 편지는 그대로예요.', [
+      { text: '남겨두기', style: 'cancel' },
+      { text: '지우기', style: 'destructive', onPress: deleteLetter },
+    ]);
+  };
 
   return (
     <View style={styles.container}>
@@ -72,6 +115,13 @@ export default function LetterDetailScreen({ letterId, onBackPress }: Props) {
       <Pressable style={styles.backButton} onPress={onBackPress}>
         <Text style={styles.backButtonText}>← 편지함으로</Text>
       </Pressable>
+      {row !== null && (
+        <Pressable style={styles.deleteButton} onPress={confirmDelete} disabled={deleting}>
+          <Text style={styles.deleteButtonText}>
+            {deleting ? '지우는 중…' : '이 편지 지우기'}
+          </Text>
+        </Pressable>
+      )}
     </View>
   );
 }
@@ -102,8 +152,15 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     paddingVertical: 12,
     alignItems: 'center',
-    marginBottom: 24,
+    marginBottom: 10,
     elevation: 1,
   },
   backButtonText: { fontSize: 15, fontWeight: '700', color: '#2e8b6f' },
+  deleteButton: {
+    borderRadius: 14,
+    paddingVertical: 12,
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  deleteButtonText: { fontSize: 14, fontWeight: '600', color: '#b3392f' },
 });
