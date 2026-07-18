@@ -67,3 +67,11 @@
 - **채택(자율) — 파이프라인 임시 초기값 (TSD.md는 "0단계에서 확정"만 정하고 구체값을 주지 않음):** `adaptiveThreshold` blockSize 31·C 15(GAUSSIAN), 수평 dilate 커널 25×3·1회, 노이즈 필터 = 이미지 높이 1%·너비 5% 미만 상자 제거, 산출물 JPEG 0.9. **근거:** 문서 이진화에서 흔한 시작 범위의 중간값 — 합성 이미지 스모크용 자리값일 뿐이며, 상수로 뽑아 두어 0단계(실물 20~30장, Windows Python) 확정값으로 교체만 하면 된다. **실물 튜닝은 하지 않았다**(항목 1 ★차단 유지).
 - **채택(자율) — 산출물은 캐시 `segmentation/<임의 id>/`에 '후보'로 저장:** 수동 보정 UI(TSD.md 4.5) 확정 시점에 문서 폴더로 옮겨 asset 행과 함께 영구화(다음 증분). 확정 전 후보를 시스템이 지워도 원본(`letters/`)에서 재생성 가능하므로 캐시가 맞는 자리다.
 - **미룬 것:** 문장 승격(4.1의 6단계 — 0단계 종속), 위젯 썸네일 다운스케일 연결(7단계), 투영 프로파일 보조 분리. 합성 이미지 스모크 실행은 개발 빌드 필요 — 사람 실기 확인 항목으로 PROGRESS에 기록.
+
+## 9. 세그멘테이션 확정 산출물의 저장 규칙 — 채택(자율, 이터레이션 16)
+
+- **무엇:** segment 테이블(TSD.md 6.3)을 src/db.ts에 추가하고, 보정 UI(TSD.md 4.5) 확정 시점에 캐시의 후보 산출물을 영구화하는 저장 계층(src/segmentation-store.ts)을 만들려면 ① 확정 파일 위치 ② processing_status 값 매핑 ③ 재확정(같은 편지 다시 분할) 시맨틱 ④ 삭제 시 segment 정리 방식을 정해야 했다. TSD는 enum(`raw|cleaned|segmented|ready`)과 "문서 디렉터리에 저장"까지만 정한다.
+- **채택(자율) — 확정 파일은 문서 폴더 `segments/<letterId>/`:** `cleaned-full.jpg` + `<granularity>-<idx>.jpg`(지금은 line만). 캐시(`segmentation/<임의 id>/`)는 후보 전용(항목 8), 확정본은 시스템이 못 지우는 문서 폴더가 맞는 자리(TSD.md 6.4). `letters/`(원본 사본)와 분리해 편지 단위 폴더 삭제가 곧 산출물 정리가 되게 했다.
+- **채택(자율) — processing_status 매핑:** 조각 1개 이상 확정 → **`ready`**(보기 모드·위젯 풀에 나갈 준비 완료), 조각 0개 = ★통짜 후퇴(TSD.md 4.5) → **`cleaned`**(cleanedFull만 — '통째로' 전용, 4.6 "조각 없는 편지" 정합). `segmented`는 "자동 분할 직후·보정 확정 전"의 중간 상태로 해석 — 현재는 후보를 DB에 넣지 않으므로 미사용. TSD가 enum 의미를 정의하지 않아 루프가 정했다 — TSD 개정 때 이 매핑을 명문화하거나 뒤집을 수 있다(코드에서는 상수 두 곳).
+- **채택(자율) — 재확정 = 통째 교체:** 이전 확정본(segment·asset 행 + `segments/<letterId>/`)을 지우고 새로 쓴다. 파일 이동(트랜잭션 밖) 후 행 갱신(트랜잭션 안)이라 어긋남 창이 있으나, 원본(`letters/`)이 불변이라 재실행으로 복구 가능(결정 8) — 보상 로직은 오버엔지니어링으로 판단해 안 만들었다.
+- **채택(자율) — 삭제는 명시 DELETE(캐스케이드 비의존):** segment의 `REFERENCES ... ON DELETE CASCADE`는 TSD.md 6.3 그대로 두되 `PRAGMA foreign_keys`를 켜지 않았다 — 켜도 asset 행·파일은 어차피 수동 정리가 필요해(asset에는 letter_id가 없다) 명시 쪽이 한 가지 방식으로 일관된다. 편지 삭제(LetterDetailScreen)가 `deleteSegmentationRows` + `deleteSegmentationDir`를 함께 호출(TSD.md 6.5 삭제 시맨틱). `ocr_text`는 항상 NULL — 결정 2(OCR 없음).

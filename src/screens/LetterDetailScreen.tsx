@@ -3,6 +3,7 @@ import { useSQLiteContext } from 'expo-sqlite';
 import { useEffect, useState } from 'react';
 import { Alert, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { deleteSegmentationDir, deleteSegmentationRows } from '../segmentation-store';
 import { deleteLetterWidgetThumbnail } from '../widgets/letter-widget-thumbs';
 import { updateLetterWidgetSafe } from '../widgets/update-letter-widget';
 
@@ -38,7 +39,8 @@ const VIEW_MODES: { mode: ViewMode; label: string }[] = [
  *
  * 삭제: 기획서 3.8 "받은 편지는 로컬에 영구 보관(사용자가 지우기 전까지)" —
  * 지우는 건 사용자의 능동 행위이며, 결정 8(디지털은 사본, 실물이 원본)에 따라
- * 사라지는 것은 앱 안의 사본뿐이다(letter·asset 행 + letters/ 이미지 사본).
+ * 사라지는 것은 앱 안의 사본뿐이다(letter·asset·segment 행 + letters/ 이미지 사본
+ * + segments/<letterId>/ 확정 산출물 — TSD.md 6.5 삭제 시맨틱).
  *
  * SDK 57 확인 (설치본 타입 정의에서 시그니처 확인):
  * - expo-sqlite `getFirstAsync<T>(source, params)` → Promise<T | null>,
@@ -77,6 +79,8 @@ export default function LetterDetailScreen({ letterId, onBackPress }: Props) {
     setDeleting(true);
     try {
       await db.withTransactionAsync(async () => {
+        // segment·연결 asset 행 먼저 — cleaned_asset_id를 letter 행에서 되읽으므로 letter보다 앞
+        await deleteSegmentationRows(db, letterId);
         await db.runAsync('DELETE FROM letter WHERE id = ?', [letterId]);
         if (row.original_asset_id !== null) {
           await db.runAsync('DELETE FROM asset WHERE id = ?', [row.original_asset_id]);
@@ -90,6 +94,12 @@ export default function LetterDetailScreen({ letterId, onBackPress }: Props) {
         } catch {
           // 무시 — 다음 스캔 저장에 영향 없음
         }
+      }
+      // 세그멘테이션 확정 산출물(segments/<letterId>/)도 정리 — 없으면 no-op
+      try {
+        deleteSegmentationDir(letterId);
+      } catch {
+        // 무시 — 고아 파일만 남는다
       }
       // 위젯 썸네일도 지우고 위젯 갱신 — 지운 편지가 위젯에 계속 뜨지 않게
       try {

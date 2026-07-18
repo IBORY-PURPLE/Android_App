@@ -2,7 +2,32 @@
 
 > 매 반복 시작 시 이 파일부터 읽는다. 규칙·범위는 overnight_task.md, 제품 결정은 ..\기획서.md, 실행 계획은 ..\개발계획.md.
 
-**반복 횟수(검증 통과 커밋 기준): 15**
+**반복 횟수(검증 통과 커밋 기준): 16**
+
+---
+
+## 이터레이션 16 — segment 테이블 + 세그멘테이션 확정 산출물 영구화 계층 (2026-07-18)
+
+**한 일**
+- 이터레이션 15의 다음 후보 ② 채택: **segment 테이블 추가(TSD.md 6.3) + 확정 산출물 문서 폴더 이동·영구화 저장 계층** — 보정 UI(후보 ①)의 전제(세그먼트 결과를 저장·읽을 곳)라서 순서를 이렇게 정했다.
+- `src/db.ts`: TSD.md 6.3 그대로 **segment 테이블 + idx_segment_letter 인덱스** 추가(`CREATE TABLE IF NOT EXISTS` — 기존 설치본도 다음 실행 때 얻는다). favorite(Phase 1)는 여전히 안 만듦. REFERENCES 절은 스키마 그대로 두되 PRAGMA foreign_keys는 안 켬 — 삭제는 명시 DELETE(DECISIONS_NEEDED 9).
+- `src/segmentation-store.ts` 신설: `persistSegmentationResult(db, letterId, result)` — 보정 UI 확정 시점에 ① 캐시 후보 파일을 문서 폴더 `segments/<letterId>/`로 move ② asset(kind='cleanedFull'/'segmentCrop')·segment 행 INSERT(bbox는 JSON, ocr_text는 항상 NULL — 결정 2) ③ letter의 cleaned_asset_id·segment_order(JSON 배열)·processing_status 갱신(조각 있으면 'ready', 통짜 후퇴면 'cleaned') — 전부 한 트랜잭션. 재확정 = 통째 교체. 보조 함수 `deleteSegmentationRows`(트랜잭션 없음 — 호출자가 감쌈)·`deleteSegmentationDir` 분리 export.
+- `LetterDetailScreen.tsx` 삭제 흐름 연결(TSD.md 6.5 삭제 시맨틱): 트랜잭션에 `deleteSegmentationRows`(letter 행 삭제보다 앞 — cleaned_asset_id를 letter에서 되읽음), 파일 정리에 `deleteSegmentationDir`(try/catch — 고아 파일만). 호출부 없던 시절의 잠재 구멍을 미리 막음.
+- 코드 작성 전 API 실측(설치본 expo-file-system SDK 57): `File.move(destination): Promise<void>`·`File.size: number`(NativeFileSystem.types.d.ts), `Directory.delete()`가 네이티브 `deleteRecursively()`(FileSystemPath.kt — 내용까지 삭제). 새 의존성 0, app.json 변경 0. `persistSegmentationResult` 호출부는 아직 없음 — 보정 UI(다음)가 첫 호출자.
+
+**검증 결과 (게이트 3종)**
+- `npx tsc --noEmit` — 통과 (에러 0)
+- `npx expo-doctor` — 통과 (20/20 checks)
+- `npx expo export -p android` — 통과 (번들 무에러)
+
+**커밋:** (이 커밋) feat: segment 테이블 + 세그멘테이션 확정 산출물 영구화 계층
+
+**사람이 눈으로 볼 것 (실기 확인 필요):** ① Expo Go에서 앱 본체(저장·상세·삭제)가 평소대로 도는지 — segment 테이블은 빈 채로 초기화만 되고 삭제 흐름의 segment 정리는 no-op이어야 정상. ② 기존 설치본(이전 DB)에서 앱 재실행 시 segment 테이블이 조용히 생기는지. ③ DECISIONS_NEEDED 9(processing_status 매핑·명시 삭제) 리뷰 — TSD 개정 때 명문화 필요.
+
+**다음 후보 (작은 순)**
+1. 보정 UI 뼈대(기획서 2.6·TSD.md 4.5) 1보 — LetterDetailScreen '한 줄씩' 자리 화면에 "세그멘테이션 실행(개발 빌드 전용)" 진입점: segmentLetterImage 실행 → 후보 조각 목록 표시 → "이대로 확정"(persistSegmentationResult 첫 호출) + ★통짜 후퇴 버튼. 합치기/나누기 등 보정 액션은 그 다음. Expo Go에선 안내 문구 후퇴(이미 throw 메시지 있음).
+2. '한 줄씩' 보기 실동작 — segment 테이블에 확정 조각이 있으면 LetterDetailScreen이 segment_order 순으로 조각 이미지를 그리기(TSD.md 4.6). (1과 합치면 커서 분리)
+3. TSD.md 5장 개정(react-native-android-widget 전제로) + 6.3 processing_status 의미 명문화(DECISIONS_NEEDED 9) — 사람 승인 후.
 
 ---
 
