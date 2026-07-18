@@ -2,7 +2,31 @@
 
 > 매 반복 시작 시 이 파일부터 읽는다. 규칙·범위는 overnight_task.md, 제품 결정은 ..\기획서.md, 실행 계획은 ..\개발계획.md.
 
-**반복 횟수(검증 통과 커밋 기준): 14**
+**반복 횟수(검증 통과 커밋 기준): 15**
+
+---
+
+## 이터레이션 15 — react-native-fast-opencv 실측 → 채택 + segmentLetterImage 파이프라인 기본 구현 (2026-07-18)
+
+**한 일**
+- 이터레이션 14의 다음 후보 ① 채택: **스코프 v2 (2) — `react-native-fast-opencv` 호환 실측(2단계 최대 리스크) → 긍정 → 설치 + 파이프라인 기본 구현.**
+- 문서 실측(코드 작성 전): npm 0.4.8(2026-02 갱신, peer `react-native: '*'` → RN 0.86 충돌 없음), 공식 문서 "New architecture ready"(JSI), 설치본 `codegenConfig`(Turbo Module) 확인. **주의 실측:** 설치본 index.tsx가 top-level에서 `global.__loadOpenCV()` 실행 — **Expo Go에서는 모듈 로드 자체가 throw** → `segmentLetterImage` 내부 지연 require + try/catch(index.ts 위젯 패턴)로 분리, 앱 본체·게이트 불변. `npx expo install react-native-fast-opencv`(0.4.8, config plugin·app.json 변경 없음 — 오토링킹).
+- `src/segmentation.ts`: 뼈대(이터레이션 9) → **TSD.md 4.1 단계 그대로 기본 구현**: `base64ToMat`(imdecode IMREAD_UNCHANGED — 채널 수 맞춰 cvtColor) → `adaptiveThreshold`(GAUSSIAN·BINARY_INV) → 표시용 cleanedFull은 `bitwise_not` → 수평 `dilate`(25×3) → `findContours`(RETR_EXTERNAL) → `boundingRect` → 노이즈 필터(높이 1%·너비 5% 미만 제거) → y 정렬 → `crop` + `saveMatToFile`(캐시 `segmentation/<id>/`, file:// 접두사 네이티브 처리 실측) → **finally에서 `clearBuffers`**(TSD.md 4.4). 산출 타입(TSD.md 6.3 매핑)은 그대로. 모든 invoke 시그니처·enum 값은 설치본 소스로 확인.
+- **파라미터는 전부 임시 초기값 상수** — 0단계 확정값으로 교체용(실물 튜닝 안 함 — ★차단 유지). 문장 승격(6단계)·위젯 썸네일 연결(7단계)·투영 프로파일 보조는 TODO로 명시. 호출부는 아직 없음(수동 보정 UI가 다음). DECISIONS_NEEDED.md 항목 8 신설.
+
+**검증 결과 (게이트 3종)**
+- `npx tsc --noEmit` — 통과 (에러 0)
+- `npx expo-doctor` — 통과 (20/20 checks)
+- `npx expo export -p android` — 통과 (번들 무에러, 683 modules)
+
+**커밋:** (이 커밋) feat: react-native-fast-opencv 채택 + segmentLetterImage 파이프라인 기본 구현
+
+**사람이 눈으로 볼 것 (실기 확인 필요):** ① **개발 빌드(`npx expo run:android`)가 RN 0.86에서 네이티브 컴파일에 성공하는지** — 라이브러리 자체 테스트는 RN 0.79 기준이라 문서 실측만으로 확정 불가(2단계 최대 리스크의 남은 부분). ② 개발 빌드에서 합성/샘플 이미지로 `segmentLetterImage` 스모크 — 줄 상자가 나오는지, cleanedFull이 흰 종이·검은 글씨로 보이는지. ③ Expo Go에서 앱 본체가 평소대로 돌고 콘솔 에러 0인지(이 함수는 호출부가 없어 영향 없어야 정상).
+
+**다음 후보 (작은 순)**
+1. 세그멘테이션 보정 UI 뼈대(기획서 2.6·TSD.md 4.5) 1보 — LetterDetailScreen '한 줄씩' 자리 화면을 "세그멘테이션 실행(개발 빌드 전용)" 진입점으로 교체, 결과 조각을 목록으로 보여주기(보정 액션은 다음). Expo Go에선 안내 문구 후퇴.
+2. segment·asset(kind='cleanedFull'/'segmentCrop') 테이블 추가(src/db.ts — TSD.md 6.3) + 확정 산출물 문서 폴더 이동.
+3. TSD.md 5장 개정(react-native-android-widget 전제로) — 사람 승인 후.
 
 ---
 

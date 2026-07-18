@@ -55,3 +55,15 @@
 - **채택(자율) — 이력은 문서 폴더 루트의 JSON 파일 `widget-recent-letters.json`:** 위젯 헤드리스 컨텍스트는 expo-sqlite를 쓰지 않기로 했으므로(항목 5 — 파일 목록 = 표시 풀) 이력도 같은 원칙으로 expo-file-system 파일에 둔다(새 의존성 0). `widget-thumbs/` 폴더 안에 두면 파일 목록이 곧 표시 풀이라 썸네일로 오인되므로 **문서 폴더 루트**에 둔다. `File.write`가 없는 파일을 만들어 줌은 네이티브 소스(FileSystemFile.kt `if (!exists) create()`)로 실측. 이력이 깨지면 빈 이력으로 취급, 기록 실패는 표시를 막지 않는다(둘 다 try/catch).
 - **★로컬 전용·동기화 금지(TSD.md 5.2 계약):** 이 이력은 랜덤 품질 개선용일 뿐이다. 클라우드 업로드·상대 동기화 금지 — 새어나가면 '읽음 확인'이 되어 원칙 4(관찰하지 않는다) 위반. 코드 주석에 같은 문구로 못박음.
 - **부수 효과:** 이력에 있는 id가 풀에 없으면(편지 삭제 등) 읽을 때 걸러진다 — 삭제 쪽 코드 변경 없음.
+
+## 8. `react-native-fast-opencv` 채택 + 세그멘테이션 임시 파라미터 — 채택(자율, 이터레이션 15)
+
+- **무엇:** 2단계 최대 리스크(스코프 v2 (2)) — OpenCV 바인딩 라이브러리의 SDK 57/신아키텍처/RN 0.86 호환을 실측하고, 호환이면 설치 + `segmentLetterImage` 기본 구현까지.
+- **채택(자율) — `react-native-fast-opencv` 0.4.8 설치. 문서 실측 근거:**
+  - npm: 최신 0.4.8(2026-02-23 갱신), peerDependencies `react: '*'`·`react-native: '*'` → RN 0.86.0/React 19.2.3과 충돌 없음.
+  - 공식 문서(lukaszkurantdev.github.io/react-native-fast-opencv): **"New architecture ready" 명시**, JSI 기반. 설치는 패키지 추가만(추가 네이티브 설정·config plugin 불필요 — 오토링킹). Expo Go 불가(네이티브 모듈 — 개발 빌드 필요).
+  - 설치본 소스: `codegenConfig` 보유(Turbo Module) — 신아키텍처 경로 확인. 단 라이브러리 자체 테스트는 RN 0.79.1 기준(devDependencies)이라 **RN 0.86에서의 네이티브 빌드 성공 여부는 개발 빌드에서 실기 확인 필요**(문서 실측만으로는 여기까지).
+  - **주의(실측):** 설치본 index.tsx가 **모듈 로드 시점(top-level)에 `global.__loadOpenCV()`를 실행** — Expo Go에서는 로드 자체가 throw한다. `segmentLetterImage` 안에서 **지연 require + try/catch**(index.ts의 위젯 라이브러리와 같은 패턴)로 분리해 앱 본체 불변. 현재 이 함수의 호출부는 없다(보정 UI가 다음).
+- **채택(자율) — 파이프라인 임시 초기값 (TSD.md는 "0단계에서 확정"만 정하고 구체값을 주지 않음):** `adaptiveThreshold` blockSize 31·C 15(GAUSSIAN), 수평 dilate 커널 25×3·1회, 노이즈 필터 = 이미지 높이 1%·너비 5% 미만 상자 제거, 산출물 JPEG 0.9. **근거:** 문서 이진화에서 흔한 시작 범위의 중간값 — 합성 이미지 스모크용 자리값일 뿐이며, 상수로 뽑아 두어 0단계(실물 20~30장, Windows Python) 확정값으로 교체만 하면 된다. **실물 튜닝은 하지 않았다**(항목 1 ★차단 유지).
+- **채택(자율) — 산출물은 캐시 `segmentation/<임의 id>/`에 '후보'로 저장:** 수동 보정 UI(TSD.md 4.5) 확정 시점에 문서 폴더로 옮겨 asset 행과 함께 영구화(다음 증분). 확정 전 후보를 시스템이 지워도 원본(`letters/`)에서 재생성 가능하므로 캐시가 맞는 자리다.
+- **미룬 것:** 문장 승격(4.1의 6단계 — 0단계 종속), 위젯 썸네일 다운스케일 연결(7단계), 투영 프로파일 보조 분리. 합성 이미지 스모크 실행은 개발 빌드 필요 — 사람 실기 확인 항목으로 PROGRESS에 기록.
