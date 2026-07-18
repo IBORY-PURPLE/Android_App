@@ -6,6 +6,7 @@ import { Alert, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { deleteSegmentationDir, deleteSegmentationRows } from '../segmentation-store';
 import { deleteLetterWidgetThumbnail } from '../widgets/letter-widget-thumbs';
 import { updateLetterWidgetSafe } from '../widgets/update-letter-widget';
+import SegmentationReviewPanel from './SegmentationReviewPanel';
 
 // letter + 원본 이미지 경로(asset.local_path)를 한 번에 읽는다 (스키마: src/db.ts)
 type LetterDetailRow = {
@@ -13,6 +14,7 @@ type LetterDetailRow = {
   received_date: number | null;
   scanned_at: number;
   original_asset_id: string | null;
+  processing_status: string;
   local_path: string | null;
 };
 
@@ -23,8 +25,9 @@ type Props = {
 
 // 보기 모드 3종 (기획서 결정 3: 편지 통째로 / 한 줄씩 / 한 문장씩).
 // TSD.md 4.6: 모드 전환은 렌더 시점의 이미지 선택일 뿐 — 새 이미지 생성이 아니다.
-// 지금은 '통째로'만 실동작. '한 줄씩'/'한 문장씩'은 2단계 세그멘테이션(OpenCV)이
-// segmentCrop 조각을 만든 뒤에 그 조각 이미지를 그린다 (TODO: 2단계).
+// '통째로'는 실동작. '한 줄씩' 자리에는 세그멘테이션 보정 패널(SegmentationReviewPanel —
+// 실행 → 후보 목록 → 확정/통짜 후퇴)이 들어가 있고, 확정된 segmentCrop 조각을
+// 여기서 그리는 것은 다음 걸음이다 (TSD.md 4.6). '한 문장씩'은 0단계 종속 — 자리만.
 type ViewMode = 'whole' | 'line' | 'sentence';
 
 const VIEW_MODES: { mode: ViewMode; label: string }[] = [
@@ -55,10 +58,13 @@ export default function LetterDetailScreen({ letterId, onBackPress }: Props) {
   const [loaded, setLoaded] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('whole');
+  // 세그멘테이션 확정 후 letter 행(processing_status 등)을 다시 읽기 위한 트리거
+  const [rowVersion, setRowVersion] = useState(0);
 
   useEffect(() => {
     db.getFirstAsync<LetterDetailRow>(
-      `SELECT l.author_display_name, l.received_date, l.scanned_at, l.original_asset_id, a.local_path
+      `SELECT l.author_display_name, l.received_date, l.scanned_at, l.original_asset_id,
+              l.processing_status, a.local_path
        FROM letter l
        LEFT JOIN asset a ON a.id = l.original_asset_id
        WHERE l.id = ?`,
@@ -72,7 +78,7 @@ export default function LetterDetailScreen({ letterId, onBackPress }: Props) {
         setError(String(e));
         setLoaded(true);
       });
-  }, [db, letterId]);
+  }, [db, letterId, rowVersion]);
 
   const deleteLetter = async () => {
     if (row === null || deleting) return;
@@ -153,14 +159,25 @@ export default function LetterDetailScreen({ letterId, onBackPress }: Props) {
           ))}
         </View>
       )}
-      {viewMode !== 'whole' && row !== null ? (
-        // TODO(2단계 세그멘테이션): segmentCrop 조각이 생기면 여기서 조각 이미지를 그린다 (TSD.md 4.6)
+      {viewMode === 'line' && row !== null && row.local_path !== null ? (
+        // 보정 패널: 실행 → 후보 목록 → 확정/★통짜 후퇴 (TSD.md 4.5, 기획서 2.6).
+        // TODO(다음 걸음): 확정된 segmentCrop 조각이 있으면 여기서 조각 이미지를 그린다 (TSD.md 4.6)
+        <SegmentationReviewPanel
+          letterId={letterId}
+          originalImagePath={row.local_path}
+          processingStatus={row.processing_status}
+          onPersisted={() => setRowVersion((n) => n + 1)}
+        />
+      ) : viewMode !== 'whole' && row !== null ? (
+        // '한 문장씩'(0단계 종속 — 자리만) 또는 원본 이미지가 없어 줄 나누기가 불가능한 경우
         <View style={styles.imageEmpty}>
           <Text style={styles.imageEmptyText}>
             {viewMode === 'line' ? '한 줄씩 보기' : '한 문장씩 보기'}는 아직 준비 중이에요.
           </Text>
           <Text style={styles.imageEmptySubText}>
-            편지를 줄 조각으로 나누는 작업(세그멘테이션)이 끝나면 여기서 볼 수 있어요.
+            {viewMode === 'line'
+              ? '저장된 원본 이미지가 없어 줄 나누기를 할 수 없어요.'
+              : '편지를 문장 조각으로 나누는 작업(세그멘테이션)이 끝나면 여기서 볼 수 있어요.'}
           </Text>
         </View>
       ) : row !== null && row.local_path !== null ? (
