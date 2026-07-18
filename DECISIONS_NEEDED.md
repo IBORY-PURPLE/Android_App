@@ -32,3 +32,10 @@
 - **무엇:** react-native-android-widget config plugin이 prebuild 시 `android.package`를 요구한다(없으면 throw — 설치본 plugin 소스 실측). app.json에 `android.package`가 없었다.
 - **채택(자율):** `"com.theone.sonpyeonji"` — 작업 공간 이름(TheOne) + 프로젝트 별칭(sonpyeonji, MORNING_REPORT에서 사용 중). **Play 제출 전까지는 자유롭게 변경 가능**(제출하면 영구 고정) — 범위 밖(제출 금지)이므로 지금은 임시 식별자 성격. 사람 확인 후 바꾸려면 app.json 한 줄 수정이면 된다.
 - **부수 채택(자율) — 위젯 최소 구성값:** 크기 3×2 셀(minWidth 180dp × minHeight 110dp) — 기획서 3.2.3 "[결정 필요] 위젯 크기: Medium 이상 권장"의 안드로이드 대응. `updatePeriodMillis` 1800000(30분) — 안드로이드 시스템 최솟값이자 TSD.md 5.1 "[결정 필요] 엔트리 간격 15/30/60분"의 중간값. 둘 다 위젯 실기 확인(개발 빌드) 때 재조정 가능.
+
+## 5. 위젯 썸네일 규격·이미지 로드 방식 — 채택(자율, 이터레이션 12)
+
+- **무엇:** 위젯에 저장 편지 이미지를 랜덤 표시하려면 ① 위젯이 읽는 저장 위치·썸네일 규격(TSD.md 1.4의 "[결정 필요] 위젯이 읽는 정확한 저장 위치")과 ② 이미지 전달 방식(TSD.md 5.4의 "[결정 필요] ImageProvider 로컬 파일 로드 방식"의 라이브러리 대응)을 정해야 했다.
+- **채택(자율) — 썸네일 공유 저장소:** 앱 문서 폴더 `widget-thumbs/<letterId>.jpg`. 앱이 편지 저장 시점에 **최대 가로 720px·JPEG 품질 0.85**로 다운스케일해 만들고(expo-image-manipulator, 원본이 더 작으면 업스케일 안 함), 위젯 태스크 핸들러는 이 폴더의 파일 목록에서 랜덤 1개를 고른다 — **위젯 쪽에서 expo-sqlite를 쓰지 않는다**(파일 목록 = 표시 풀, TSD.md 1.4 취지). **근거:** 3×2 셀 minWidth 180dp는 고밀도(~3x) 화면에서 ~540px — 720px면 리사이즈 여유 포함 충분하고 위젯 메모리 예산(TSD.md 5.4 "원본 고해상도 로드 금지")을 지킨다. 실기 확인 때 재조정 가능.
+- **채택(자율) — `file://` 경로 전달:** `ImageWidget`의 TS 타입(`ImageWidgetSource`)에는 `file:`이 없지만, **네이티브 로더가 `file://`을 명시 지원함을 설치본 소스로 실측**(android/.../utils/ResourceUtils.java `getBitmap` — `BitmapFactory.decodeFile` 분기). 캐스트로 넘긴다. **주의:** 문서에 없는 타입 밖 경로이므로 라이브러리 업데이트 때 이 분기가 유지되는지 재확인할 것.
+- **미룬 것:** TSD.md 5.2 "직전 표시 즉시 재노출 방지(최근 K개 제외)"는 이번 증분에서 **균등 랜덤만** 구현 — 최근 표시 이력 저장(로컬 전용·동기화 금지, 원칙 4)이 필요해 다음 증분으로.

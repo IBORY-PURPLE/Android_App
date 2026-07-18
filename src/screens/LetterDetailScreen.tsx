@@ -3,6 +3,9 @@ import { useSQLiteContext } from 'expo-sqlite';
 import { useEffect, useState } from 'react';
 import { Alert, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { deleteLetterWidgetThumbnail } from '../widgets/letter-widget-thumbs';
+import { updateLetterWidgetSafe } from '../widgets/update-letter-widget';
+
 // letter + 원본 이미지 경로(asset.local_path)를 한 번에 읽는다 (스키마: src/db.ts)
 type LetterDetailRow = {
   author_display_name: string;
@@ -88,6 +91,13 @@ export default function LetterDetailScreen({ letterId, onBackPress }: Props) {
           // 무시 — 다음 스캔 저장에 영향 없음
         }
       }
+      // 위젯 썸네일도 지우고 위젯 갱신 — 지운 편지가 위젯에 계속 뜨지 않게
+      try {
+        deleteLetterWidgetThumbnail(letterId);
+      } catch {
+        // 무시 — 고아 썸네일만 남는다
+      }
+      updateLetterWidgetSafe();
       onBackPress(); // 편지함으로 — 목록 화면이 다시 마운트되며 새로 읽는다
     } catch (e) {
       setError(`지우지 못했어요: ${String(e)}`);

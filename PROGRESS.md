@@ -2,7 +2,36 @@
 
 > 매 반복 시작 시 이 파일부터 읽는다. 규칙·범위는 overnight_task.md, 제품 결정은 ..\기획서.md, 실행 계획은 ..\개발계획.md.
 
-**반복 횟수(검증 통과 커밋 기준): 11**
+**반복 횟수(검증 통과 커밋 기준): 12**
+
+---
+
+## 이터레이션 12 — 위젯에 저장 편지 이미지 랜덤 표시 (썸네일 공유 저장 + ImageWidget) (2026-07-18)
+
+**한 일**
+- 이터레이션 11의 다음 후보 ① 채택: **위젯에 저장된 편지 이미지 1장 랜덤 표시**(기획서 결정 4 '볼 때마다 랜덤' · 2.5 표시 로직).
+- `npx expo install expo-image-manipulator`(~57.0.5, Expo Go 내장). 코드 작성 전 SDK 57 문서 확인: 새 클래스 API `ImageManipulator.manipulate(source)` → `.resize({ width })`(한 값만 주면 비율 유지) → `.renderAsync()` → `ImageRef.saveAsync({ format, compress })`(캐시 폴더에 저장). 레거시 manipulateAsync는 deprecated — 안 씀.
+- `src/widgets/letter-widget-thumbs.ts` 신설 — 앱↔위젯 썸네일 공유 저장소(TSD.md 1.4·5.4):
+  - 저장 시 `widget-thumbs/<letterId>.jpg`로 **최대 가로 720px·JPEG 0.85** 다운스케일(원본이 작으면 업스케일 안 함 — 원칙 1). 캐시 → 문서 폴더로 move.
+  - `pickRandomLetterWidgetThumbnailUri()` — 파일 목록에서 **균등 랜덤 1개**, 0장이면 null(→ 온보딩 카드). **위젯 쪽 expo-sqlite 접근 없음** — 파일 목록이 곧 표시 풀. "직전 재노출 방지(최근 K개 제외, TSD.md 5.2)"는 이력 저장이 필요해 다음 증분 TODO.
+- `LetterWidget.tsx`: props(`thumbnailUri`/`widthDp`/`heightDp`) 추가 — 썸네일이 있으면 `ImageWidget`(resizeMode "contain" — 잘림 금지·축소 우선, TSD.md 5.4), 없으면 기존 온보딩 카드. **실측 2건:** ① 위젯 트리 빌더가 React Fragment 미지원(설치본 build-widget-tree.ts) → 분기마다 FlexWidget 루트 반환. ② `ImageWidget`의 TS 타입엔 `file:`이 없지만 네이티브 로더가 `file://` 명시 지원(ResourceUtils.java `BitmapFactory.decodeFile` 분기) → 캐스트로 전달(DECISIONS_NEEDED 5).
+- `widget-task-handler.tsx`: ADDED/UPDATE/RESIZED에서 랜덤 썸네일 + `widgetInfo.width/height`(dp — ImageWidget의 imageWidth/imageHeight가 dp임을 네이티브 소스로 확인)를 넘겨 렌더. 파일 접근 실패 시 온보딩 카드로 후퇴.
+- `src/widgets/update-letter-widget.tsx` 신설: `updateLetterWidgetSafe()` — `requestWidgetUpdate`를 지연 require + try/catch로 감싼 no-op 안전 함수(Expo Go 앱 본체 불변 — index.ts와 같은 패턴). 저장(AddLetterScreen)·삭제(LetterDetailScreen) 직후 호출: 저장 시 썸네일 생성+위젯 갱신, 삭제 시 썸네일 삭제+위젯 갱신(지운 편지가 위젯에 안 남게 — TSD.md 5.1 "새 편지 스캔 시 즉시 반영").
+
+**검증 결과 (게이트 3종)**
+- `npx tsc --noEmit` — 통과 (에러 0)
+- `npx expo-doctor` — 통과 (20/20 checks)
+- `npx expo export -p android` — 통과 (번들 무에러, 675 modules)
+
+**커밋:** (이 커밋) feat: 위젯에 저장 편지 이미지 랜덤 표시 (썸네일 공유 저장 + ImageWidget)
+
+**사람이 눈으로 볼 것:** 위젯 실동작은 **개발 빌드(`npx expo run:android`) 필요.** ① 편지 1~2장 저장 → 홈 화면 위젯에 손글씨 썸네일이 뜨는지 ② 30분 갱신·위젯 재추가 때 랜덤으로 바뀌는지 ③ 편지 전부 삭제 → 온보딩 카드 복귀 ④ `file://` 캐스트 경로가 실기에서 실제 그려지는지(DECISIONS_NEEDED 5 주의 참조). Expo Go에서는 저장/삭제 흐름이 그대로 돌고 위젯 호출은 no-op인지(콘솔 에러 0) 확인.
+
+**다음 후보 (작은 순)**
+1. 위젯 탭 → 앱 열기/편지 상세 딥링크(TSD.md 5.5) — widget-task-handler의 WIDGET_CLICK + clickAction.
+2. TSD.md 5.2 "직전 표시 즉시 재노출 방지" — 최근 표시 이력(로컬 전용·동기화 금지, 원칙 4)을 키-값 저장소에 저장.
+3. 스코프 v2 (2): `react-native-fast-opencv` 설치·신아키텍처 호환 실측 + `segmentLetterImage` 기본 구현(합성 이미지 스모크까지 — 실물 튜닝 금지).
+4. TSD.md 5장 개정(react-native-android-widget 전제로) — 사람 승인 후.
 
 ---
 

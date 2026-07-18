@@ -3,22 +3,68 @@
 'use no memo';
 
 import React from 'react';
-import { FlexWidget, TextWidget } from 'react-native-android-widget';
+import {
+  FlexWidget,
+  ImageWidget,
+  TextWidget,
+  type ImageWidgetSource,
+} from 'react-native-android-widget';
+
+const PADDING = 12;
+
+export type LetterWidgetProps = {
+  /** 위젯용 다운스케일 썸네일의 file:// 경로. null이면 편지 0장 → 온보딩 카드. */
+  thumbnailUri: string | null;
+  /** 위젯 실제 크기(dp) — widgetTaskHandler의 widgetInfo.width/height에서 받는다. */
+  widthDp: number;
+  heightDp: number;
+};
 
 /**
- * 홈 화면 위젯 — 3단계 최소 구성 (react-native-android-widget).
+ * 홈 화면 위젯 — 저장된 편지 이미지 1장 표시 (react-native-android-widget).
  *
- * 지금은 빈 위젯 온보딩 카드만 그린다(TSD.md 5.3 — 편지 0장이어도 첫인상이
- * 빈칸이 되지 않게. 기획서 P0 '빈 위젯 첫인상 처리').
+ * - 편지가 1장이라도 있으면 언제나 손글씨 이미지를 그린다(원칙 1 — 손글씨 물성 보존).
+ *   텍스트가 뜨는 것은 편지 0장 온보딩 카드뿐이다(TSD.md 5.3 · 기획서 2.5 빈 상태 규칙).
+ * - resizeMode="contain": 종횡비 유지, 넘치면 잘림 금지 → 축소 우선(TSD.md 5.4).
+ * - 지금은 편지 원본의 통짜 썸네일. 2단계 세그멘테이션이 끝나면 같은 자리에
+ *   문장/줄 조각 썸네일이 들어온다(TSD.md 4.6 — 모드 전환은 이미지 선택일 뿐).
  *
- * TODO(3단계 다음 증분): 저장된 편지 이미지 1장 랜덤 표시 — 기획서 결정 4(볼 때마다 랜덤).
- * - 위젯 프로세스는 expo-sqlite를 직접 못 쓰므로, 앱이 저장 시점에 만들어 두는
- *   위젯용 다운스케일 썸네일(TSD.md 1.4 공유 저장소·5.4 위젯 메모리 예산)을
- *   ImageWidget의 로컬 파일 경로로 읽는 구조로 간다.
- * - 원칙 1(손글씨 물성 보존): 편지가 1장이라도 있으면 언제나 손글씨 이미지를 그린다.
- *   텍스트가 뜨는 것은 편지 0장 온보딩 카드뿐이다.
+ * ImageWidget 실측 근거(설치본 소스):
+ * - imageWidth/imageHeight는 dp 단위로 이미지 표시 크기를 정한다
+ *   (android/.../builder/widget/ImageWidget.java — dpToPx 변환).
+ * - image의 TS 타입(ImageWidgetSource)에는 file:이 없지만, 네이티브 로더는
+ *   file:// 경로를 명시 지원한다(android/.../utils/ResourceUtils.java getBitmap —
+ *   BitmapFactory.decodeFile 분기). 그래서 캐스트로 넘긴다.
  */
-export function LetterWidget() {
+export function LetterWidget({ thumbnailUri, widthDp, heightDp }: LetterWidgetProps) {
+  // 주의: 위젯 트리 빌더는 React Fragment(<>...</>)를 지원하지 않는다
+  // (설치본 src/api/build-widget-tree.ts — type이 함수인 위젯 컴포넌트만 순회).
+  // 그래서 분기마다 FlexWidget 루트를 통째로 반환한다.
+  if (thumbnailUri !== null) {
+    return (
+      <FlexWidget
+        style={{
+          height: 'match_parent',
+          width: 'match_parent',
+          justifyContent: 'center',
+          alignItems: 'center',
+          backgroundColor: '#FFF9F2',
+          borderRadius: 16,
+          padding: PADDING,
+        }}
+        accessibilityLabel="손편지 위젯"
+      >
+        <ImageWidget
+          image={thumbnailUri as ImageWidgetSource}
+          imageWidth={Math.max(1, widthDp - PADDING * 2)}
+          imageHeight={Math.max(1, heightDp - PADDING * 2)}
+          resizeMode="contain"
+          radius={8}
+        />
+      </FlexWidget>
+    );
+  }
+
   return (
     <FlexWidget
       style={{
@@ -28,7 +74,7 @@ export function LetterWidget() {
         alignItems: 'center',
         backgroundColor: '#FFF9F2',
         borderRadius: 16,
-        padding: 12,
+        padding: PADDING,
       }}
       accessibilityLabel="손편지 위젯"
     >

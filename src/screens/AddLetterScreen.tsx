@@ -5,6 +5,9 @@ import { useSQLiteContext } from 'expo-sqlite';
 import { useState } from 'react';
 import { Image, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
+import { createLetterWidgetThumbnail } from '../widgets/letter-widget-thumbs';
+import { updateLetterWidgetSafe } from '../widgets/update-letter-widget';
+
 type Props = {
   onBackPress: () => void;
 };
@@ -91,6 +94,15 @@ export default function AddLetterScreen({ onBackPress }: Props) {
           [letterId, name, receivedMs, Date.now(), assetId, 'raw']
         );
       });
+
+      // 위젯용 다운스케일 썸네일 생성 + 위젯 즉시 갱신(TSD.md 1.4·5.1).
+      // 실패해도 편지 저장은 이미 성공 — 위젯만 다음 기회에 따라잡는다(치명 아님).
+      try {
+        await createLetterWidgetThumbnail(letterId, destFile.uri);
+      } catch {
+        // 무시 — 편지 본체(원본 사본 + DB 행)는 온전하다
+      }
+      updateLetterWidgetSafe();
 
       onBackPress(); // 편지함으로 — 목록 화면이 다시 마운트되며 새로 읽는다
     } catch (e) {
