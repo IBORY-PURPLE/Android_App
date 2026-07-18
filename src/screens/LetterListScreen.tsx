@@ -12,10 +12,11 @@ type LetterRow = {
 
 type Props = {
   onAddPress: () => void;
+  onLetterPress: (letterId: string) => void;
 };
 
 // 편지함 — letter 테이블을 읽는 목록 + "편지 추가" 진입점 (개발계획.md 1단계 '화면: 편지함/편지 추가')
-export default function LetterListScreen({ onAddPress }: Props) {
+export default function LetterListScreen({ onAddPress, onLetterPress }: Props) {
   const db = useSQLiteContext();
   const [letters, setLetters] = useState<LetterRow[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -36,10 +37,10 @@ export default function LetterListScreen({ onAddPress }: Props) {
         data={letters}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
-          <View style={styles.row}>
+          <Pressable style={styles.row} onPress={() => onLetterPress(item.id)}>
             <Text style={styles.rowName}>{item.author_display_name}</Text>
             <Text style={styles.rowDate}>{formatDate(item.received_date ?? item.scanned_at)}</Text>
-          </View>
+          </Pressable>
         )}
         ListEmptyComponent={
           <View style={styles.empty}>
