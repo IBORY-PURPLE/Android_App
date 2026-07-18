@@ -13,10 +13,12 @@ type LetterRow = {
 type Props = {
   onAddPress: () => void;
   onLetterPress: (letterId: string) => void;
+  /** 위젯 미리보기 화면(TSD.md 5.6 — 위젯 디자인을 앱 안에서 확인) 진입 */
+  onWidgetPreviewPress: () => void;
 };
 
 // 편지함 — letter 테이블을 읽는 목록 + "편지 추가" 진입점 (개발계획.md 1단계 '화면: 편지함/편지 추가')
-export default function LetterListScreen({ onAddPress, onLetterPress }: Props) {
+export default function LetterListScreen({ onAddPress, onLetterPress, onWidgetPreviewPress }: Props) {
   const db = useSQLiteContext();
   const [letters, setLetters] = useState<LetterRow[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -31,7 +33,12 @@ export default function LetterListScreen({ onAddPress, onLetterPress }: Props) {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>편지함</Text>
+      <View style={styles.titleRow}>
+        <Text style={styles.title}>편지함</Text>
+        <Pressable onPress={onWidgetPreviewPress} hitSlop={8}>
+          <Text style={styles.previewLink}>위젯 미리보기</Text>
+        </Pressable>
+      </View>
       {error !== null && <Text style={styles.error}>목록을 읽지 못했어요: {error}</Text>}
       <FlatList
         data={letters}
@@ -66,7 +73,14 @@ function formatDate(epochMs: number): string {
 
 const styles = StyleSheet.create({
   container: { flex: 1, paddingTop: 56, paddingHorizontal: 20 },
-  title: { fontSize: 26, fontWeight: '800', color: '#1f2a24', marginBottom: 16 },
+  titleRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'baseline',
+    marginBottom: 16,
+  },
+  title: { fontSize: 26, fontWeight: '800', color: '#1f2a24' },
+  previewLink: { fontSize: 14, color: '#2e8b6f', fontWeight: '600' },
   error: { fontSize: 13, color: '#b3392f', marginBottom: 12 },
   row: {
     backgroundColor: '#fff',

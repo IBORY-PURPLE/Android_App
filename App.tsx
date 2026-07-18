@@ -7,10 +7,11 @@ import { DB_NAME, initLetterDb } from './src/db';
 import AddLetterScreen from './src/screens/AddLetterScreen';
 import LetterDetailScreen from './src/screens/LetterDetailScreen';
 import LetterListScreen from './src/screens/LetterListScreen';
+import WidgetPreviewScreen from './src/screens/WidgetPreviewScreen';
 import { letterIdFromParsedDeepLink } from './src/widgets/letter-deep-link';
 
 // 이 숫자를 바꿔 저장하면 에뮬레이터 화면이 즉시 바뀝니다 (실시간 반영 증명용)
-const BUILD_MARKER = 10;
+const BUILD_MARKER = 11;
 
 /** 앱을 연 URL이 위젯 딥링크(sonpyeonji://letter/<id>, TSD.md 5.5)면 편지 id를 돌려준다. */
 function letterIdFromUrl(url: string): string | null {
@@ -22,8 +23,12 @@ function letterIdFromUrl(url: string): string | null {
   }
 }
 
-// 화면이 셋뿐이라 내비게이션 라이브러리 없이 useState로 전환한다
-type Screen = { name: 'list' } | { name: 'add' } | { name: 'detail'; letterId: string };
+// 화면이 몇 개뿐이라 내비게이션 라이브러리 없이 useState로 전환한다
+type Screen =
+  | { name: 'list' }
+  | { name: 'add' }
+  | { name: 'detail'; letterId: string }
+  | { name: 'widgetPreview' };
 
 export default function App() {
   return (
@@ -60,6 +65,7 @@ function Root() {
         <LetterListScreen
           onAddPress={() => setScreen({ name: 'add' })}
           onLetterPress={(letterId) => setScreen({ name: 'detail', letterId })}
+          onWidgetPreviewPress={() => setScreen({ name: 'widgetPreview' })}
         />
       )}
       {screen.name === 'add' && <AddLetterScreen onBackPress={() => setScreen({ name: 'list' })} />}
@@ -68,6 +74,9 @@ function Root() {
           letterId={screen.letterId}
           onBackPress={() => setScreen({ name: 'list' })}
         />
+      )}
+      {screen.name === 'widgetPreview' && (
+        <WidgetPreviewScreen onBackPress={() => setScreen({ name: 'list' })} />
       )}
       <Text style={styles.marker}>BUILD #{BUILD_MARKER}</Text>
       <StatusBar style="auto" />

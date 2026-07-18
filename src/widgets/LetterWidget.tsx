@@ -11,9 +11,20 @@ import {
 } from 'react-native-android-widget';
 
 import { letterDetailDeepLinkUri } from './letter-deep-link';
+import {
+  ONBOARDING_CAPTION_COLOR,
+  ONBOARDING_CAPTION_FONT_SIZE,
+  ONBOARDING_CAPTION_MARGIN_TOP,
+  ONBOARDING_CAPTION_TEXT,
+  ONBOARDING_TITLE_COLOR,
+  ONBOARDING_TITLE_FONT_SIZE,
+  ONBOARDING_TITLE_TEXT,
+  WIDGET_BG_COLOR,
+  WIDGET_BORDER_RADIUS,
+  WIDGET_IMAGE_RADIUS,
+  WIDGET_PADDING,
+} from './letter-widget-design';
 import type { LetterWidgetThumbnail } from './letter-widget-thumbs';
-
-const PADDING = 12;
 
 export type LetterWidgetProps = {
   /** 표시할 썸네일(경로 + 편지 id). null이면 편지 0장 → 온보딩 카드. */
@@ -41,6 +52,9 @@ export type LetterWidgetProps = {
  * - 위젯 위에 별표 등 다른 버튼은 놓지 않는다(TSD.md 5.5 — 오조작 방지·의도적 행위 보존,
  *   결정 9 '능동 반응만'·결정 10 '별표 = 단일 제스처').
  *
+ * 디자인 값(색·여백·문구)은 letter-widget-design.ts 토큰만 쓴다 — 앱 안 미리보기
+ * (WidgetPreviewScreen)와 항상 같은 값이 되도록(TSD.md 5.6 · 기획서 3.9 완화 전략).
+ *
  * ImageWidget 실측 근거(설치본 소스):
  * - imageWidth/imageHeight는 dp 단위로 이미지 표시 크기를 정한다
  *   (android/.../builder/widget/ImageWidget.java — dpToPx 변환).
@@ -60,9 +74,9 @@ export function LetterWidget({ thumbnail, widthDp, heightDp }: LetterWidgetProps
           width: 'match_parent',
           justifyContent: 'center',
           alignItems: 'center',
-          backgroundColor: '#FFF9F2',
-          borderRadius: 16,
-          padding: PADDING,
+          backgroundColor: WIDGET_BG_COLOR,
+          borderRadius: WIDGET_BORDER_RADIUS,
+          padding: WIDGET_PADDING,
         }}
         clickAction="OPEN_URI"
         clickActionData={{ uri: letterDetailDeepLinkUri(thumbnail.letterId) }}
@@ -70,10 +84,10 @@ export function LetterWidget({ thumbnail, widthDp, heightDp }: LetterWidgetProps
       >
         <ImageWidget
           image={thumbnail.uri as ImageWidgetSource}
-          imageWidth={Math.max(1, widthDp - PADDING * 2)}
-          imageHeight={Math.max(1, heightDp - PADDING * 2)}
+          imageWidth={Math.max(1, widthDp - WIDGET_PADDING * 2)}
+          imageHeight={Math.max(1, heightDp - WIDGET_PADDING * 2)}
           resizeMode="contain"
-          radius={8}
+          radius={WIDGET_IMAGE_RADIUS}
         />
       </FlexWidget>
     );
@@ -86,26 +100,26 @@ export function LetterWidget({ thumbnail, widthDp, heightDp }: LetterWidgetProps
         width: 'match_parent',
         justifyContent: 'center',
         alignItems: 'center',
-        backgroundColor: '#FFF9F2',
-        borderRadius: 16,
-        padding: PADDING,
+        backgroundColor: WIDGET_BG_COLOR,
+        borderRadius: WIDGET_BORDER_RADIUS,
+        padding: WIDGET_PADDING,
       }}
       clickAction="OPEN_APP"
       accessibilityLabel="손편지 위젯 — 탭하면 앱을 열어요"
     >
       <TextWidget
-        text="첫 편지를 기다리는 중"
+        text={ONBOARDING_TITLE_TEXT}
         style={{
-          fontSize: 15,
-          color: '#8A6D5B',
+          fontSize: ONBOARDING_TITLE_FONT_SIZE,
+          color: ONBOARDING_TITLE_COLOR,
         }}
       />
       <TextWidget
-        text="편지를 스캔하면 여기에 손글씨가 떠요"
+        text={ONBOARDING_CAPTION_TEXT}
         style={{
-          fontSize: 12,
-          color: '#B49A87',
-          marginTop: 6,
+          fontSize: ONBOARDING_CAPTION_FONT_SIZE,
+          color: ONBOARDING_CAPTION_COLOR,
+          marginTop: ONBOARDING_CAPTION_MARGIN_TOP,
         }}
       />
     </FlexWidget>

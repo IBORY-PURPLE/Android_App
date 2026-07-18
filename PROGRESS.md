@@ -2,7 +2,32 @@
 
 > 매 반복 시작 시 이 파일부터 읽는다. 규칙·범위는 overnight_task.md, 제품 결정은 ..\기획서.md, 실행 계획은 ..\개발계획.md.
 
-**반복 횟수(검증 통과 커밋 기준): 20**
+**반복 횟수(검증 통과 커밋 기준): 21**
+
+---
+
+## 이터레이션 21 — 위젯 미리보기 앱 화면 복제 (TSD.md 5.6 — Fast Refresh 디자인 루프) (2026-07-18)
+
+**한 일**
+- 이터레이션 20의 다음 후보 ② 채택(①합치기는 OpenCV 재크롭 + 개발 빌드 전용 검증이라 더 무겁고, ③TSD 개정은 사람 승인 대기): **위젯 미리보기를 앱 일반 화면에 복제**(TSD.md 5.6 · 기획서 3.9 완화 전략 — 위젯 레이아웃 변경이 재빌드일 수 있으니 디자인 반복은 앱 화면 Fast Refresh로, 빌드는 최종 검증에만).
+- `src/widgets/letter-widget-design.ts` 신설 — **디자인 토큰 공유 모듈**(색·여백·반경·글자 크기·온보딩 문구·최소 크기 180×110dp). `LetterWidget.tsx`가 인라인 값 대신 이 토큰을 쓰도록 교체(레이아웃 구조·clickAction 변경 0 — 값의 출처만 이동). `LetterWidget` 자체는 앱 화면에 렌더 불가(FlexWidget 등은 위젯 트리 전용 + Expo Go에서 라이브러리 로드 throw 가능)라 **토큰 공유가 정합 유지 수단**(채택 근거는 DECISIONS_NEEDED 14).
+- `src/screens/WidgetPreviewScreen.tsx` 신설: 벽지 흉내 배경 위에 **최소 크기(180×110dp) 위젯 프레임**을 같은 토큰으로 복제(FlexWidget↔View, ImageWidget↔Image contain, TextWidget↔Text 대응 주석 명시). ① **"다른 조각 뽑기"** — 실제 위젯과 같은 `pickRandomLetterWidgetThumbnail()` 호출(= 30분 갱신 한 번과 같은 로직·이력 공유) → **뽑기·최근 K개 제외(TSD.md 5.2)가 개발 빌드 없이 Expo Go에서 검증 가능**해짐 ② **온보딩 카드 강제 토글**(편지가 있어도 0장 분기 디자인 확인 — 기획서 P0 빈 위젯 첫인상) ③ 풀 크기·표시 중 엔트리 키 캡션(어느 조각이 뽑혔는지 눈 확인용). 파일 접근 실패는 위젯 태스크 핸들러와 같은 온보딩 후퇴.
+- `LetterListScreen.tsx` 제목 행에 "위젯 미리보기" 진입 링크, `App.tsx` 화면 상태에 `widgetPreview` 추가(BUILD #11).
+- 새 의존성 0, 새 Expo API 0(기존 실측 모듈 letter-widget-thumbs + RN 기본 컴포넌트만 — docs 확인 대상 없음). 앱 본체 Expo Go에서 그대로 돈다(미리보기 화면 자체가 Expo Go 검증용).
+
+**검증 결과 (게이트 3종)**
+- `npx tsc --noEmit` — 통과 (에러 0)
+- `npx expo-doctor` — 통과 (20/20 checks)
+- `npx expo export -p android` — 통과 (번들 무에러, 697 modules)
+
+**커밋:** (이 커밋) feat: 위젯 미리보기 앱 화면 복제 (디자인 토큰 공유 + 뽑기/온보딩 토글)
+
+**사람이 눈으로 볼 것 (실기 확인 필요):** **Expo Go에서 바로** — ① 편지함 → "위젯 미리보기" → 저장된 편지 썸네일이 위젯 카드 모양(180×110dp·편지지 톤)으로 뜨는지 ② "다른 조각 뽑기" 연타 → 조각이 바뀌고 최근에 나온 조각이 바로 반복되지 않는지(풀 4개 이상일 때), 캡션의 풀 개수·엔트리 키가 맞는지 ③ 온보딩 카드 토글 → "첫 편지를 기다리는 중" 2줄 디자인 ④ 콘솔 에러 0. 개발 빌드 — 미리보기와 실제 홈 위젯이 같은 디자인으로 보이는지(토큰 공유 검증), LetterWidget 토큰 교체 후에도 위젯이 이전과 똑같이 그려지는지.
+
+**다음 후보 (작은 순)**
+1. 보정 액션 '합치기'(TSD.md 4.5 ①) — 인접 조각 병합. bbox 합집합으로 cleanedFull에서 재크롭 필요(OpenCV 또는 expo-image-manipulator crop) — 삭제보다 한 단계 무겁다.
+2. 편지함 목록 썸네일(1단계 다듬기) — 목록 행에 저장 이미지 미리보기(위젯 썸네일 재사용 가능) — 기획서 6.4 박물관 코어의 소품.
+3. TSD.md 5장 개정(react-native-android-widget 전제) + 6.3 processing_status 매핑(DECISIONS_NEEDED 9)·풀 편입 규칙(13)·미리보기 방식(14) 명문화 — 사람 승인 후.
 
 ---
 
