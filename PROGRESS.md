@@ -2,7 +2,30 @@
 
 > 매 반복 시작 시 이 파일부터 읽는다. 규칙·범위는 overnight_task.md, 제품 결정은 ..\기획서.md, 실행 계획은 ..\개발계획.md.
 
-**반복 횟수(검증 통과 커밋 기준): 3**
+**반복 횟수(검증 통과 커밋 기준): 4**
+
+---
+
+## 이터레이션 4 — expo-image-picker 갤러리 선택 (2026-07-18)
+
+**한 일**
+- `npx expo install expo-image-picker` (~57.0.5, Expo Go 내장. app.json 변경 없음).
+- 코드 작성 전 https://docs.expo.dev/versions/v57.0.0/sdk/imagepicker/ 에서 실제 API 확인: `launchImageLibraryAsync(options)` → `{ canceled, assets }`, `mediaTypes`는 문자열 배열 `['images']`(MediaTypeOptions enum은 deprecated), 갤러리 실행에는 권한 요청 불필요.
+- `src/screens/AddLetterScreen.tsx` 신설: "갤러리에서 사진 선택" 버튼 → 선택한 사진을 화면에 미리보기(`resizeMode="contain"`) + "다른 사진 고르기" 재선택 + "편지함으로" 복귀. `quality: 1`로 압축 안 함(기획서 원칙 1 손글씨 물성 보존).
+- `App.tsx`: AddLetterPlaceholder 자리 화면 제거, AddLetterScreen으로 교체. BUILD #5.
+- 아직 저장하지 않음 — 선택·표시까지만. INSERT는 다음 증분.
+
+**검증 결과 (게이트 3종)**
+- `npx tsc --noEmit` — 통과 (에러 0)
+- `npx expo-doctor` — 통과 (20/20 checks)
+- `npx expo export -p android` — 통과 (번들 무에러, 618 modules)
+
+**커밋:** `47f382e` feat: expo-image-picker 갤러리 선택으로 편지 추가 화면 구현
+
+**다음 후보 (작은 순)**
+1. 편지 메타(애칭·날짜) 입력 폼 → letter/asset INSERT 연결 (expo-file-system으로 이미지를 앱 폴더에 복사 — 결정 8 '디지털은 사본') + 저장 후 편지함 목록 갱신
+2. 편지 상세 화면 + 보기모드 3종 뼈대 (통짜/줄만/영역 — 실제 분할은 2단계 스캐폴드로)
+3. (뼈대만) OpenCV 세그멘테이션 인터페이스 + TODO / Glance 위젯 자리 표시
 
 ---
 
