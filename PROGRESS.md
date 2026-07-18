@@ -2,7 +2,29 @@
 
 > 매 반복 시작 시 이 파일부터 읽는다. 규칙·범위는 overnight_task.md, 제품 결정은 ..\기획서.md, 실행 계획은 ..\개발계획.md.
 
-**반복 횟수(검증 통과 커밋 기준): 2**
+**반복 횟수(검증 통과 커밋 기준): 3**
+
+---
+
+## 이터레이션 3 — 편지함 화면 뼈대 (2026-07-18)
+
+**한 일**
+- `src/screens/LetterListScreen.tsx` 신설: letter 테이블을 `getAllAsync`로 읽는 편지함 목록(지금은 빈 목록 → 💌 빈 상태 안내) + "편지 추가" 버튼. 코드 작성 전 https://docs.expo.dev/versions/v57.0.0/sdk/sqlite/ 에서 `getAllAsync<T>(source, params?)` 시그니처 확인.
+- `App.tsx`: hello-world 화면을 편지함으로 교체. 화면이 둘뿐이라 내비게이션 라이브러리 없이 `useState('list' | 'add')`로 전환 — "편지 추가"는 자리 화면(다음 증분에서 expo-image-picker로 채움) + "편지함으로" 복귀 버튼. BUILD #4 마커는 하단 작은 글씨로 유지.
+- 새 의존성 없음.
+
+**검증 결과 (게이트 3종)**
+- `npx tsc --noEmit` — 통과 (에러 0)
+- `npx expo-doctor` — 통과 (20/20 checks)
+- `npx expo export -p android` — 통과 (번들 무에러, 613 modules)
+
+**커밋:** `0c7042a` feat: 편지함 화면 뼈대 (letter 목록 + 편지 추가 진입점)
+
+**다음 후보 (작은 순)**
+1. expo-image-picker로 갤러리에서 사진 선택 → 편지 추가 화면에 표시 (Expo Go 내장, docs 확인 후)
+2. 편지 메타(애칭·날짜) 입력 폼 → letter/asset INSERT 연결 (expo-file-system으로 이미지 복사 포함) + 편지함 목록 갱신
+3. 편지 상세 화면 + 보기모드 3종 뼈대 (통짜/줄만/영역 — 실제 분할은 2단계 스캐폴드로)
+4. (뼈대만) OpenCV 세그멘테이션 인터페이스 + TODO / Glance 위젯 자리 표시
 
 ---
 
