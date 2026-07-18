@@ -2,7 +2,31 @@
 
 > 매 반복 시작 시 이 파일부터 읽는다. 규칙·범위는 overnight_task.md, 제품 결정은 ..\기획서.md, 실행 계획은 ..\개발계획.md.
 
-**반복 횟수(검증 통과 커밋 기준): 6**
+**반복 횟수(검증 통과 커밋 기준): 7**
+
+---
+
+## 이터레이션 7 — 편지 삭제 (2026-07-18)
+
+**한 일**
+- MORNING_REPORT 실기 확인에서 승격된 후보 채택: 테스트 레코드("tdorld")를 지울 방법이 없었음. 기획서 3.8 "받은 편지는 로컬에 영구 보관(**사용자가 지우기 전까지**)" + 결정 8(디지털은 사본, 실물이 원본) 정합 — 지워지는 건 앱 안의 사본뿐.
+- `LetterDetailScreen.tsx`: "이 편지 지우기" 버튼 + `Alert.alert` 확인 다이얼로그("앱에 담아 둔 사본만 사라져요. 실물 편지는 그대로예요"). 확인 시 ① 트랜잭션으로 letter·asset 행 DELETE ② `letters/` 이미지 사본 파일 삭제(실패해도 고아 파일만 — try/catch로 무시) ③ 편지함 복귀(재마운트로 목록 자동 갱신).
+- 코드 작성 전 API 확인(설치본 SDK 57 타입 정의): expo-file-system `File.delete(): void`(동기, 없으면 throw)·`File.exists: boolean` — node_modules/expo-file-system/build/internal/NativeFileSystem.types.d.ts. 레거시 `deleteAsync`는 쓰지 않음(SDK 57에서 throw).
+- 상세 조회 쿼리에 `original_asset_id` 추가. 새 의존성 없음. BUILD #8.
+
+**검증 결과 (게이트 3종)**
+- `npx tsc --noEmit` — 통과 (에러 0)
+- `npx expo-doctor` — 통과 (20/20 checks)
+- `npx expo export -p android` — 통과 (번들 무에러, 644 modules)
+
+**커밋:** `4d5d3b8` feat: 편지 삭제 (확인 다이얼로그 + letter/asset DELETE + 이미지 사본 정리)
+
+**사람이 눈으로 볼 것:** 에뮬레이터에서 "tdorld" 테스트 레코드를 실제로 지워보기 (상세 → 이 편지 지우기 → 확인 → 목록에서 사라짐 + 재시작 후에도 안 돌아옴).
+
+**다음 후보 (작은 순)**
+1. 보기모드 3종 뼈대 — 편지 상세 화면에 통짜/줄만/영역 전환 UI. 통짜만 실동작(현재 이미지), 줄만/영역은 자리 + "2단계 세그멘테이션 후" TODO 안내. (개발계획.md 1단계 '보기모드 3종 뼈대')
+2. (뼈대만) OpenCV 세그멘테이션 인터페이스 + TODO — segment 산출물 타입·함수 시그니처만 (실제 구현은 0단계 실물 사진 이후)
+3. (뼈대만) Glance 위젯 자리 표시 — 3단계 스캐폴드 (착수 시 `expo-widgets` 안드로이드 지원 실측 스파이크부터 — TSD 부록 A ★차단)
 
 ---
 
