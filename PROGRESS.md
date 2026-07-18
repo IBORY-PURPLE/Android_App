@@ -2,7 +2,30 @@
 
 > 매 반복 시작 시 이 파일부터 읽는다. 규칙·범위는 overnight_task.md, 제품 결정은 ..\기획서.md, 실행 계획은 ..\개발계획.md.
 
-**반복 횟수(검증 통과 커밋 기준): 8**
+**반복 횟수(검증 통과 커밋 기준): 9**
+
+---
+
+## 이터레이션 9 — OpenCV 세그멘테이션 인터페이스 뼈대 (2026-07-18)
+
+**한 일**
+- 이터레이션 8의 다음 후보 ① 채택: `src/segmentation.ts` 신설 — **타입·시그니처만** (overnight_task.md '이번 루프의 범위': 2단계는 뼈대까지).
+- 타입은 TSD.md 6.3 segment 테이블에 1:1 매핑: `SegmentGranularity('line'|'sentence')` · `NormalizedBoundingBox(bbox)` · `SegmentCandidate(idx·cropUri·bbox·aspectRatio)` · `SegmentationResult(cleanedFullUri + segments[], 빈 배열 = 통짜 후퇴 경로)`. 함수는 `segmentLetterImage(originalImageUri)` 하나 — 호출 시 "준비 중" throw(호출부 아직 없음).
+- TODO 주석에 TSD.md 4.1 파이프라인 단계(cvtColor → adaptiveThreshold → 투영 프로파일+dilate → findContours → boundingRect → 크롭 → 문장 승격 → 다운스케일)와 4.4 `clearBuffers` 수동 해제 메모 명시. 실제 구현·`react-native-fast-opencv` 설치는 안 함 — 파라미터가 0단계 실물 사진 검증(DECISIONS_NEEDED 1 ★차단) 종속이라 범위 밖.
+- 새 의존성·새 Expo API 없음(순수 타입 파일 — docs 확인 대상 API 없음). 화면 연결 없음(2단계에서 연결).
+
+**검증 결과 (게이트 3종)**
+- `npx tsc --noEmit` — 통과 (에러 0)
+- `npx expo-doctor` — 통과 (20/20 checks)
+- `npx expo export -p android` — 통과 (번들 무에러, 644 modules)
+
+**커밋:** `688ad9a` feat: OpenCV 세그멘테이션 인터페이스 뼈대 (타입·시그니처만, 구현은 2단계)
+
+**사람이 눈으로 볼 것:** 없음(화면 변화 없음). 코드 리뷰만 — 타입이 TSD.md 6.3 스키마와 맞는지.
+
+**다음 후보 (작은 순)**
+1. (뼈대만) Glance 위젯 자리 표시 — 3단계 스캐폴드 (착수 시 `expo-widgets` 안드로이드 지원 실측 스파이크부터 — TSD 부록 A ★차단. Expo Go 밖이면 자리·TODO 문서화까지만).
+2. 1단계 마무리 점검 — overnight_task.md '이번 루프의 범위' 대비 누락 확인 후 MORNING_REPORT.md 갱신.
 
 ---
 
